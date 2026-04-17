@@ -25,15 +25,236 @@ interface StoryChoice {
   nextScene: string;
 }
 
-const SYSTEM_PROMPT_SCENE = `Tu es un conteur pour enfants créatif. Génère une histoire courte et magique en JSON uniquement.
+interface ChoiceGenerationContext {
+  sceneNumber?: number;
+  totalScenes?: number;
+  previousChoiceText?: string;
+  recentChoices?: string[];
+  arcTitle?: string;
+  arcObjective?: string;
+}
+
+const VALID_BACKGROUNDS = ['forest', 'castle', 'space', 'ocean', 'mountain', 'village', 'garden', 'cave'];
+const VALID_ITEMS = ['wand', 'compass', 'mirror', 'book', 'crown', 'key', 'lamp', 'flower', 'star'];
+const VALID_EFFECTS = ['stars', 'rain', 'snow', 'fireflies', 'magic', 'clouds'];
+const VALID_COLORS = ['green', 'purple', 'pink', 'orange'];
+const VALID_ICONS = ['compass', 'cave', 'fairy', 'star', 'map', 'key'];
+const VALID_HERO_EMOTIONS = ['happy', 'brave', 'curious', 'thinking'];
+
+const SYSTEM_PROMPT_SCENE = `Tu es un conteur pour enfants expert en narration interactive.
+Mission: produire une scène qui fait progresser l'aventure avec cohérence et variété.
+Contraintes narratives:
+- 2 a 4 phrases claires, imagées, adaptées aux enfants (6-10 ans).
+- La scene doit avoir un petit objectif concret, un mini-enjeu rassurant et une transition naturelle.
+- Evite la repetition de formulations entre scenes consecutives.
+- Si c'est une scene finale, conclure avec une fin douce, satisfaisante et memorisable.
+
+Réponds en JSON strict uniquement.
 Format obligatoire :
 {"text":"<2-3 phrases pour enfants en français>","visuals":{"bg":"<forest|castle|space|ocean|mountain|village|garden|cave>","hero":"<HERO_ID>_<happy|brave|curious|thinking>","item":"<wand|compass|mirror|book|crown|key|lamp|flower|star>","effect":"<stars|rain|snow|fireflies|magic|clouds>"}}
 Réponds UNIQUEMENT avec le JSON, sans texte avant ni après.`;
 
-const SYSTEM_PROMPT_CHOICES = `Tu es un conteur pour enfants. Génère exactement 3 choix en JSON uniquement.
+const SYSTEM_PROMPT_CHOICES = `Tu es un conteur pour enfants. Génère exactement 3 choix utiles et logiques.
+Contraintes qualité:
+- Chaque choix doit etre directement faisable dans la scene actuelle.
+- Les 3 choix doivent etre differents (exploration, interaction, action/reflexion).
+- Les choix doivent aider l'enfant a comprendre les consequences, sans peur.
+- Texte de choix: 6 a 11 mots maximum, naturel en francais.
+- Si des choix precedents sont fournis, au moins un choix doit faire reference a une consequence concrete de ces choix.
+
+Réponds en JSON strict uniquement.
 Format obligatoire :
 [{"id":"1","text":"<choix court en français>","icon":"<compass|cave|star|map|key>","color":"<green|purple|pink|orange>","nextScene":"<mot_clé>"},{"id":"2","text":"<choix>","icon":"<icone>","color":"<couleur>","nextScene":"<mot_clé>"},{"id":"3","text":"<choix>","icon":"<icone>","color":"<couleur>","nextScene":"<mot_clé>"}]
 Réponds UNIQUEMENT avec le JSON, sans texte avant ni après.`;
+
+const slugify = (value: string, fallback = 'next_scene') => {
+  const normalized = value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+
+  return normalized || fallback;
+};
+
+const pickOne = <T,>(items: T[]): T => {
+  return items[Math.floor(Math.random() * items.length)];
+};
+
+const clipChoiceText = (value: string): string => {
+  const collapsed = value.replace(/\s+/g, ' ').trim();
+  return collapsed.slice(0, 90);
+};
+
+const normalizeSceneText = (value: string): string => {
+  const collapsed = value.replace(/\s+/g, ' ').trim();
+  return collapsed.slice(0, 460);
+};
+
+const normalizeHeroTag = (tag: string, characterId: string) => {
+  const [rawId, rawEmotion] = tag.split('_');
+  const safeId = rawId === characterId ? characterId : characterId;
+  const safeEmotion = VALID_HERO_EMOTIONS.includes(rawEmotion) ? rawEmotion : 'happy';
+  return `${safeId}_${safeEmotion}`;
+};
+
+const normalizeVisualTag = (value: string, allowed: string[], fallback: string) => {
+  return allowed.includes(value) ? value : fallback;
+};
+
+const parseFirstJsonObject = (raw: string): Record<string, unknown> | null => {
+  try {
+    return JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(jsonMatch[0]) as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  }
+};
+
+const parseFirstJsonArray = (raw: string): unknown[] | null => {
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? parsed : null;
+  } catch {
+    const jsonMatch = raw.match(/\[[\s\S]*\]/);
+    if (!jsonMatch) {
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(jsonMatch[0]) as unknown;
+      return Array.isArray(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+};
+
+const createContextualChoices = (sceneText: string): StoryChoice[] => {
+  const lower = sceneText.toLowerCase();
+
+  const optionsByContext: Array<{ when: RegExp; choices: StoryChoice[] }> = [
+    {
+      when: /for[êe]t|jardin|nature|arbre|fleur/,
+      choices: [
+        { id: '1', text: 'Suivre le sentier de lumières', icon: 'compass', color: 'green', nextScene: 'sentier_lumiere' },
+        { id: '2', text: 'Parler doucement aux animaux', icon: 'star', color: 'purple', nextScene: 'dialogue_animaux' },
+        { id: '3', text: 'Observer les indices au sol', icon: 'map', color: 'orange', nextScene: 'indices_foret' },
+      ],
+    },
+    {
+      when: /espace|[ée]toile|plan[èe]te|cosmos|n[ée]buleuse/,
+      choices: [
+        { id: '1', text: 'Suivre la constellation la plus brillante', icon: 'star', color: 'purple', nextScene: 'constellation_brillante' },
+        { id: '2', text: 'Scanner la zone avec la carte', icon: 'map', color: 'green', nextScene: 'scan_spatial' },
+        { id: '3', text: 'Approcher doucement l objet mystérieux', icon: 'key', color: 'orange', nextScene: 'objet_mysterieux' },
+      ],
+    },
+    {
+      when: /ch[âa]teau|couronne|roi|reine|tour/,
+      choices: [
+        { id: '1', text: 'Entrer dans la grande bibliothèque', icon: 'key', color: 'purple', nextScene: 'bibliotheque_royale' },
+        { id: '2', text: 'Explorer la cour du château', icon: 'map', color: 'green', nextScene: 'cour_chateau' },
+        { id: '3', text: 'Demander conseil au gardien', icon: 'star', color: 'pink', nextScene: 'conseil_gardien' },
+      ],
+    },
+  ];
+
+  const contextual = optionsByContext.find((entry) => entry.when.test(lower));
+  if (contextual) {
+    return contextual.choices;
+  }
+
+  return [
+    { id: '1', text: 'Explorer calmement les environs', icon: 'compass', color: 'green', nextScene: 'exploration_douce' },
+    { id: '2', text: 'Demander un indice magique', icon: 'star', color: 'purple', nextScene: 'indice_magique' },
+    { id: '3', text: 'Essayer une idée courageuse', icon: 'key', color: 'orange', nextScene: 'idee_courageuse' },
+  ];
+};
+
+const sanitizeChoices = (rawChoices: unknown[], sceneText: string): StoryChoice[] => {
+  const usedTexts = new Set<string>();
+
+  const cleaned = rawChoices
+    .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
+    .map((choice, index) => {
+      const text = clipChoiceText(String(choice.text ?? ''));
+      const icon = String(choice.icon ?? '').toLowerCase();
+      const color = String(choice.color ?? '').toLowerCase();
+      const nextScene = String(choice.nextScene ?? '');
+
+      return {
+        id: String(index + 1),
+        text,
+        icon: VALID_ICONS.includes(icon) ? icon : pickOne(VALID_ICONS),
+        color: VALID_COLORS.includes(color) ? color : VALID_COLORS[index % VALID_COLORS.length],
+        nextScene: slugify(nextScene || text, `next_scene_${index + 1}`),
+      } as StoryChoice;
+    })
+    .filter((choice) => {
+      if (!choice.text || choice.text.length < 8) {
+        return false;
+      }
+
+      const dedupeKey = choice.text.toLowerCase();
+      if (usedTexts.has(dedupeKey)) {
+        return false;
+      }
+
+      usedTexts.add(dedupeKey);
+      return true;
+    })
+    .slice(0, 3);
+
+  if (cleaned.length < 3) {
+    return createContextualChoices(sceneText);
+  }
+
+  return cleaned;
+};
+
+const ensureContinuityChoice = (
+  choices: StoryChoice[],
+  context?: ChoiceGenerationContext
+): StoryChoice[] => {
+  const recent = context?.recentChoices ?? [];
+  if (recent.length === 0 || choices.length === 0) {
+    return choices;
+  }
+
+  const recentLower = recent.join(' ').toLowerCase();
+  const hasContinuity = choices.some((choice) => {
+    const choiceLower = choice.text.toLowerCase();
+    return choiceLower.includes('encore') || choiceLower.includes('suite') || recentLower.includes(choiceLower);
+  });
+
+  if (hasContinuity) {
+    return choices;
+  }
+
+  const lastRecent = recent[recent.length - 1] ?? 'notre derniere idee';
+  const continuityChoice: StoryChoice = {
+    id: '1',
+    text: `Continuer la suite de: ${lastRecent}`.slice(0, 88),
+    icon: 'map',
+    color: 'purple',
+    nextScene: slugify(`suite_${lastRecent}`, 'suite_histoire'),
+  };
+
+  return [continuityChoice, ...choices.slice(0, 2)].map((choice, index) => ({
+    ...choice,
+    id: String(index + 1),
+  }));
+};
 
 async function callOpenAICompat(
   config: AIConfig,
@@ -173,13 +394,23 @@ const useGemmaGGUF = () => {
         const raw = await callAI(config, system, prompt, 300);
         console.log(`[${config.provider}] Scène:`, raw);
 
-        const jsonMatch = raw.match(/\{[\s\S]*\}/);
-        const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : raw) as GemmaResponse;
-
-        if (!parsed.visuals?.hero?.startsWith(characterId)) {
-          parsed.visuals.hero = `${characterId}_happy`;
+        const parsedObject = parseFirstJsonObject(raw);
+        if (!parsedObject) {
+          return createDefaultResponse(characterId);
         }
-        return parsed;
+
+        const parsedText = normalizeSceneText(String(parsedObject.text ?? ''));
+        const visuals = (parsedObject.visuals ?? {}) as Record<string, unknown>;
+
+        return {
+          text: parsedText || createDefaultResponse(characterId).text,
+          visuals: {
+            bg: normalizeVisualTag(String(visuals.bg ?? ''), VALID_BACKGROUNDS, 'forest'),
+            hero: normalizeHeroTag(String(visuals.hero ?? `${characterId}_happy`), characterId),
+            item: normalizeVisualTag(String(visuals.item ?? ''), VALID_ITEMS, 'star'),
+            effect: normalizeVisualTag(String(visuals.effect ?? ''), VALID_EFFECTS, 'magic'),
+          },
+        };
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         console.warn(`[IA] Erreur scène, fallback:`, message);
@@ -193,24 +424,56 @@ const useGemmaGGUF = () => {
   );
 
   const generateChoices = useCallback(
-    async (currentScene: string, characterId: string): Promise<StoryChoice[]> => {
+    async (
+      currentScene: string,
+      characterId: string,
+      context?: ChoiceGenerationContext
+    ): Promise<StoryChoice[]> => {
       const config = currentConfig ?? (await loadAIConfig());
       setIsLoading(true);
       try {
-        const userPrompt = `Histoire: "${currentScene.slice(0, 300)}"\nPersonnage: ${characterId}`;
+        const sceneSummary = normalizeSceneText(currentScene).slice(0, 340);
+        const progression =
+          context?.sceneNumber && context?.totalScenes
+            ? `Scene actuelle: ${context.sceneNumber}/${context.totalScenes}`
+            : 'Scene actuelle: inconnue';
+        const previousChoiceLine = context?.previousChoiceText
+          ? `Dernier choix pris: ${context.previousChoiceText}`
+          : '';
+        const recentChoicesLine =
+          context?.recentChoices && context.recentChoices.length > 0
+            ? `2-3 derniers choix: ${context.recentChoices.join(' | ')}`
+            : '';
+        const arcLine =
+          context?.arcTitle && context?.arcObjective
+            ? `Arc en cours: ${context.arcTitle}. Objectif: ${context.arcObjective}.`
+            : '';
+
+        const userPrompt = [
+          `Histoire: "${sceneSummary}"`,
+          `Personnage: ${characterId}`,
+          progression,
+          previousChoiceLine,
+          recentChoicesLine,
+          arcLine,
+          'Les choix doivent etre directement relies a cette scene.',
+        ]
+          .filter(Boolean)
+          .join('\n');
+
         const raw = await callAI(config, SYSTEM_PROMPT_CHOICES, userPrompt, 250);
         console.log(`[${config.provider}] Choix:`, raw);
 
-        const jsonMatch = raw.match(/\[[\s\S]*\]/);
-        const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : raw);
-        const choices: StoryChoice[] = Array.isArray(parsed) ? parsed : (parsed.choices ?? []);
+        const parsedArray = parseFirstJsonArray(raw);
+        if (!parsedArray) {
+          return ensureContinuityChoice(createContextualChoices(currentScene), context);
+        }
 
-        if (choices.length === 0) return createDefaultChoices();
-        return choices.slice(0, 3);
+        return ensureContinuityChoice(sanitizeChoices(parsedArray, currentScene), context);
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         console.warn(`[IA] Erreur choix, fallback:`, message);
-        return createDefaultChoices();
+        return ensureContinuityChoice(createContextualChoices(currentScene), context);
       } finally {
         setIsLoading(false);
       }

@@ -37,6 +37,8 @@ export interface SavedStoryState {
   storyProgress: StoryProgress;
   currentScene: StoryScene;
   currentChoices: StoryChoice[];
+  recentChoiceTexts?: string[];
+  keyDecisionTags?: string[];
   startedAt: number;
   updatedAt: number;
 }

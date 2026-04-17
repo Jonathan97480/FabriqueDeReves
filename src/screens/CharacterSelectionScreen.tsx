@@ -23,6 +23,7 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const CharacterSelectionScreen: React.FC = () => {
   const navigation = useNavigation<CharacterSelectionScreenNavigationProp>();
+  const [isHistoryVisible, setIsHistoryVisible] = React.useState(true);
   const {
     clearSavedStoryProgress,
     isSavedStoriesReady,
@@ -125,9 +126,32 @@ const CharacterSelectionScreen: React.FC = () => {
         </View>
       )}
 
-      {isSavedStoriesReady && storyHistory.length > 0 && (
+      {isSavedStoriesReady && storyHistory.length > 0 && !isHistoryVisible && (
+        <View style={styles.historyToggleContainer}>
+          <TouchableOpacity
+            style={styles.historyToggleButton}
+            onPress={() => setIsHistoryVisible(true)}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="time-outline" size={16} color={colors.text.primary} />
+            <Text style={styles.historyToggleText}>Afficher l'historique des contes</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {isSavedStoriesReady && storyHistory.length > 0 && isHistoryVisible && (
         <View style={styles.historyContainer}>
-          <Text style={styles.sectionTitle}>Historique des contes</Text>
+          <View style={styles.historyHeaderRow}>
+            <Text style={styles.sectionTitle}>Historique des contes</Text>
+            <TouchableOpacity
+              style={styles.closeHistoryButton}
+              onPress={() => setIsHistoryVisible(false)}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="close" size={16} color={colors.text.secondary} />
+              <Text style={styles.closeHistoryText}>Fermer</Text>
+            </TouchableOpacity>
+          </View>
           {storyHistory.slice(0, 3).map((historyItem) => (
             <TouchableOpacity
               key={historyItem.id}
@@ -242,6 +266,46 @@ const styles = StyleSheet.create({
     backgroundColor: colors.card,
     borderWidth: 1,
     borderColor: colors.border,
+  },
+  historyHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  closeHistoryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+    backgroundColor: colors.background.primary,
+  },
+  closeHistoryText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.text.secondary,
+  },
+  historyToggleContainer: {
+    marginHorizontal: 20,
+    marginBottom: 12,
+  },
+  historyToggleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  historyToggleText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.text.primary,
   },
   historyItem: {
     marginTop: 8,

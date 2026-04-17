@@ -29,6 +29,138 @@ import {
   StoryScene,
 } from '../types';
 
+type CharacterArc = {
+  title: string;
+  objective: string;
+  tension: string;
+  endingStyle: string;
+  motifs: string[];
+  valueTheme: string;
+};
+
+const CHARACTER_ARCS: Record<string, CharacterArc> = {
+  leo: {
+    title: 'Explorateur des etoiles',
+    objective: 'comprendre un mystere cosmique et guider son equipage',
+    tension: 'choisir entre curiosite, prudence et courage dans linconnu',
+    endingStyle: 'une conclusion lumineuse sur la confiance et la decouverte',
+    motifs: ['constellation', 'hublot', 'signal stellaire', 'carte du ciel'],
+    valueTheme: 'confiance et esprit dexploration',
+  },
+  maya: {
+    title: 'Gardienne des jardins magiques',
+    objective: 'proteger le vivant et restaurer lharmonie dun lieu enchante',
+    tension: 'equilibrer empathie, dialogue et action pour aider les autres',
+    endingStyle: 'une conclusion tendre sur le soin et lamitie',
+    motifs: ['fleurs lumieres', 'source claire', 'chemin de mousse', 'graines dorees'],
+    valueTheme: 'empathie et harmonie',
+  },
+  spark: {
+    title: 'Petit dragon coeur vaillant',
+    objective: 'canaliser sa flamme pour aider sans faire peur',
+    tension: 'transformer limpulsite en gestes utiles et bienveillants',
+    endingStyle: 'une conclusion joyeuse sur la maitrise de soi et lentraide',
+    motifs: ['etincelles douces', 'souffle chaud', 'aile brillante', 'roche volcanique'],
+    valueTheme: 'maitrise de soi et entraide',
+  },
+};
+
+const DECISION_KEYWORDS: Array<{ tag: string; keywords: string[] }> = [
+  { tag: 'exploration', keywords: ['explorer', 'sentier', 'suivre', 'chercher', 'observer'] },
+  { tag: 'dialogue', keywords: ['parler', 'demander', 'ecouter', 'conseil', 'discuter'] },
+  { tag: 'courage', keywords: ['courage', 'oser', 'avancer', 'entrer', 'affronter'] },
+  { tag: 'prudence', keywords: ['doucement', 'prudemment', 'ralentir', 'attendre'] },
+  { tag: 'entraide', keywords: ['aider', 'proteger', 'soutenir', 'partager'] },
+  { tag: 'creativite', keywords: ['imaginer', 'idee', 'inventer', 'astuce', 'magique'] },
+];
+
+const MAX_RECENT_CHOICES = 3;
+const MAX_DECISION_TAGS = 6;
+
+const pickCharacterArc = (characterId: string): CharacterArc => {
+  return CHARACTER_ARCS[characterId] ?? {
+    title: 'Aventure feerique',
+    objective: 'grandir a travers des choix utiles et bienveillants',
+    tension: 'trouver le bon equilibre entre curiosite et prudence',
+    endingStyle: 'une conclusion douce avec un apprentissage clair',
+    motifs: ['lueur magique', 'sentier secret', 'objet mystere'],
+    valueTheme: 'courage bienveillant',
+  };
+};
+
+const getArcPhase = (sceneNumber: number, totalScenes: number): string => {
+  const ratio = sceneNumber / Math.max(totalScenes, 1);
+
+  if (ratio <= 0.34) {
+    return 'Ouverture: installer le monde, la mission et un premier obstacle.';
+  }
+
+  if (ratio <= 0.75) {
+    return 'Developpement: consequences des choix, nouvel obstacle et progression claire.';
+  }
+
+  return 'Resolution: preparer la conclusion et la lecon positive du personnage.';
+};
+
+const inferDecisionTag = (choiceText: string): string => {
+  const lower = choiceText.toLowerCase();
+  const found = DECISION_KEYWORDS.find((entry) =>
+    entry.keywords.some((keyword) => lower.includes(keyword))
+  );
+
+  return found?.tag ?? 'choix_reflechi';
+};
+
+const summarizeDecisionTags = (decisionTags: string[]): string => {
+  if (decisionTags.length === 0) {
+    return 'choix_reflechi';
+  }
+
+  return Array.from(new Set(decisionTags)).slice(0, 4).join(', ');
+};
+
+const formatRecentChoices = (recentChoiceTexts: string[]): string => {
+  if (recentChoiceTexts.length === 0) {
+    return 'Aucun choix precedent.';
+  }
+
+  return recentChoiceTexts
+    .slice(-MAX_RECENT_CHOICES)
+    .map((choiceText, index) => `${index + 1}. ${choiceText}`)
+    .join(' | ');
+};
+
+const buildEndingInstruction = (
+  characterId: string,
+  decisionTags: string[],
+  recentChoiceTexts: string[]
+): string => {
+  const arc = pickCharacterArc(characterId);
+  const decisionSummary = summarizeDecisionTags(decisionTags);
+  const recentChoices = formatRecentChoices(recentChoiceTexts);
+
+  return `Ceci est la derniere scene. Termine le conte avec ${arc.endingStyle}. ` +
+    `Integre explicitement les consequences positives des decisions suivantes: ${decisionSummary}. ` +
+    `Rappelle au moins un choix recent de maniere naturelle: ${recentChoices}. ` +
+    `Mets en valeur la theme de valeur: ${arc.valueTheme}. ` +
+    'La fin doit etre claire, complete, rassurante et sans suspense.';
+};
+
+const buildFallbackEndingText = (
+  characterId: string,
+  characterName: string,
+  decisionTags: string[],
+  recentChoiceTexts: string[]
+): string => {
+  const arc = pickCharacterArc(characterId);
+  const decisionSummary = summarizeDecisionTags(decisionTags);
+  const lastChoice = recentChoiceTexts[recentChoiceTexts.length - 1] ?? 'faire un choix bienveillant';
+
+  return `${characterName} termine son arc "${arc.title}" avec une fin douce et lumineuse. ` +
+    `Grace a ses decisions (${decisionSummary}), il/elle comprend la valeur de ${arc.valueTheme}. ` +
+    `Son dernier elan, "${lastChoice}", devient un souvenir heureux qui rassure tout le monde.`;
+};
+
 const useStoryEngine = () => {
   const [currentScene, setCurrentScene] = useState<StoryScene | null>(null);
   const [storyProgress, setStoryProgress] = useState<StoryProgress>({
@@ -41,6 +173,8 @@ const useStoryEngine = () => {
   const [selectedCharacter, setSelectedCharacter] = useState<Character | null>(null);
   const [appSettings, setAppSettings] = useState<AppSettings>({ ...DEFAULT_APP_SETTINGS });
   const [storyStartedAt, setStoryStartedAt] = useState<number | null>(null);
+  const [recentChoiceTexts, setRecentChoiceTexts] = useState<string[]>([]);
+  const [keyDecisionTags, setKeyDecisionTags] = useState<string[]>([]);
   const [resumeStorySummary, setResumeStorySummary] = useState<StoryResumeSummary | null>(null);
   const [storyHistory, setStoryHistory] = useState<CompletedStorySummary[]>([]);
   const [isSavedStoriesReady, setIsSavedStoriesReady] = useState(false);
@@ -88,7 +222,10 @@ const useStoryEngine = () => {
       scene: StoryScene,
       sceneNumber: number,
       totalScenes: number,
-      characterIdOverride?: string
+      characterIdOverride?: string,
+      previousChoiceText?: string,
+      recentChoicesOverride?: string[],
+      arcOverride?: CharacterArc
     ): Promise<StoryChoice[]> => {
       const activeCharacterId = characterIdOverride ?? selectedCharacter?.id;
 
@@ -102,7 +239,17 @@ const useStoryEngine = () => {
       }
 
       try {
-        const choices = await generateChoices(scene.text, activeCharacterId);
+        const activeArc = arcOverride ?? pickCharacterArc(activeCharacterId);
+        const recentChoicesForPrompt = (recentChoicesOverride ?? recentChoiceTexts).slice(-MAX_RECENT_CHOICES);
+
+        const choices = await generateChoices(scene.text, activeCharacterId, {
+          sceneNumber,
+          totalScenes,
+          previousChoiceText,
+          recentChoices: recentChoicesForPrompt,
+          arcTitle: activeArc.title,
+          arcObjective: activeArc.objective,
+        });
         setCurrentChoices(choices);
         return choices;
       } catch (error) {
@@ -136,7 +283,7 @@ const useStoryEngine = () => {
         return defaultChoices;
       }
     },
-    [generateChoices, selectedCharacter]
+    [generateChoices, recentChoiceTexts, selectedCharacter]
   );
 
   const selectCharacter = useCallback((characterId: string) => {
@@ -170,6 +317,8 @@ const useStoryEngine = () => {
         updateSceneAssets(savedStory.currentScene.visuals);
         setStoryProgress(savedStory.storyProgress);
         setCurrentChoices(savedStory.currentChoices);
+        setRecentChoiceTexts(savedStory.recentChoiceTexts ?? []);
+        setKeyDecisionTags(savedStory.keyDecisionTags ?? []);
         setStoryStartedAt(savedStory.startedAt);
         setResumeStorySummary(toResumeSummary(savedStory));
         return;
@@ -177,10 +326,15 @@ const useStoryEngine = () => {
 
       const startedAt = Date.now();
       setStoryStartedAt(startedAt);
+      setRecentChoiceTexts([]);
+      setKeyDecisionTags([]);
+
+      const arc = pickCharacterArc(characterId);
+      const arcMotifs = arc.motifs.join(', ');
 
       try {
         const initialScene = await generateStoryScene(
-          `Commence une histoire magique pour enfants. ${storytellerStyle} Le héros principal est ${characterDesc}. L'histoire doit parler de ce personnage spécifique. Nous sommes à la scène 1 sur ${totalScenes}. Garde un ton rassurant et adapte le vocabulaire aux enfants.`,
+          `Commence une histoire magique pour enfants. ${storytellerStyle} Le heros principal est ${characterDesc}. Arc narratif: ${arc.title}. Objectif: ${arc.objective}. Tension narrative: ${arc.tension}. Motifs a reutiliser: ${arcMotifs}. Phase narrative: ${getArcPhase(1, totalScenes)}. Nous sommes a la scene 1 sur ${totalScenes}. Garde un ton rassurant et adapte le vocabulaire aux enfants.`,
           characterId
         );
 
@@ -213,6 +367,8 @@ const useStoryEngine = () => {
           storyProgress: initialProgress,
           currentScene: formattedScene,
           currentChoices: initialChoices,
+          recentChoiceTexts: [],
+          keyDecisionTags: [],
           startedAt,
           updatedAt: Date.now(),
         });
@@ -249,6 +405,8 @@ const useStoryEngine = () => {
           storyProgress: initialProgress,
           currentScene: fallbackScene,
           currentChoices: initialChoices,
+          recentChoiceTexts: [],
+          keyDecisionTags: [],
           startedAt,
           updatedAt: Date.now(),
         });
@@ -265,7 +423,13 @@ const useStoryEngine = () => {
   );
 
   const nextScene = useCallback(
-    async (previousScene: StoryScene, choiceText: string, updatedChoices: string[]) => {
+    async (
+      previousScene: StoryScene,
+      choiceText: string,
+      updatedChoices: string[],
+      updatedRecentChoices: string[],
+      updatedDecisionTags: string[]
+    ) => {
       if (!selectedCharacter) {
         return;
       }
@@ -277,15 +441,25 @@ const useStoryEngine = () => {
       const characterDesc = characterInfo
         ? `${characterInfo.name} (${characterInfo.description})`
         : selectedCharacter.id;
+      const arc = pickCharacterArc(selectedCharacter.id);
+      const recentChoicesContext = formatRecentChoices(updatedRecentChoices);
+      const decisionSummary = summarizeDecisionTags(updatedDecisionTags);
+      const arcPhase = getArcPhase(nextSceneNumber, totalScenes);
+      const arcMotifs = arc.motifs.join(', ');
       const storytellerStyle =
         STORYTELLER_PERSONALITIES[appSettings.storytellerPersonality].promptStyle;
+      const endingInstruction = buildEndingInstruction(
+        selectedCharacter.id,
+        updatedDecisionTags,
+        updatedRecentChoices
+      );
 
       try {
         const newScene = await generateStoryScene(
-          `${previousScene.text}\n\n${characterDesc} décide de : ${choiceText}. ${storytellerStyle} Nous sommes à la scène ${nextSceneNumber} sur ${totalScenes}. ${
+          `${previousScene.text}\n\n${characterDesc} decide de : ${choiceText}. Arc en cours: ${arc.title}. Objectif de larc: ${arc.objective}. Tension: ${arc.tension}. Motifs a garder visibles: ${arcMotifs}. Theme de valeur: ${arc.valueTheme}. Phase narrative: ${arcPhase}. Choix recents: ${recentChoicesContext}. Decisions clefs prises: ${decisionSummary}. ${storytellerStyle} Nous sommes a la scene ${nextSceneNumber} sur ${totalScenes}. ${
             isFinalScene
-              ? 'Ceci est la dernière scène. Termine le conte avec une fin douce, claire et satisfaisante, sans suspense.'
-              : `Continue l'histoire de manière magique et adaptée aux enfants. Le héros principal reste ${characterInfo?.name ?? selectedCharacter.id}.`
+              ? endingInstruction
+              : `Continue lhistoire de maniere magique et adaptee aux enfants. Le heros principal reste ${characterInfo?.name ?? selectedCharacter.id}.`
           }`,
           selectedCharacter.id
         );
@@ -310,8 +484,18 @@ const useStoryEngine = () => {
         setCurrentScene(formattedScene);
         updateSceneAssets(formattedScene.visuals);
         setStoryProgress(nextProgress);
+        setRecentChoiceTexts(updatedRecentChoices);
+        setKeyDecisionTags(updatedDecisionTags);
 
-        const nextChoices = await generateChoicesForScene(formattedScene, nextSceneNumber, totalScenes);
+        const nextChoices = await generateChoicesForScene(
+          formattedScene,
+          nextSceneNumber,
+          totalScenes,
+          undefined,
+          choiceText,
+          updatedRecentChoices,
+          arc
+        );
 
         if (isFinalScene) {
           await appendCompletedStory(selectedCharacter.id, totalScenes, formattedScene.text);
@@ -325,6 +509,8 @@ const useStoryEngine = () => {
           storyProgress: nextProgress,
           currentScene: formattedScene,
           currentChoices: nextChoices,
+          recentChoiceTexts: updatedRecentChoices,
+          keyDecisionTags: updatedDecisionTags,
           startedAt: storyStartedAt ?? Date.now(),
           updatedAt: Date.now(),
         });
@@ -335,7 +521,12 @@ const useStoryEngine = () => {
         const fallbackScene: StoryScene = {
           id: `scene_${nextSceneNumber}`,
           text: isFinalScene
-            ? `${characterInfo?.name ?? 'Le héros'} découvre enfin une fin lumineuse et rentre le coeur rempli de souvenirs merveilleux.`
+            ? buildFallbackEndingText(
+                selectedCharacter.id,
+                characterInfo?.name ?? 'Le heros',
+                updatedDecisionTags,
+                updatedRecentChoices
+              )
             : `L'aventure de ${characterInfo?.name ?? 'le héros'} continue avec de nouvelles découvertes pleines de magie.`,
           visuals: {
             bg: characterInfo?.theme ?? 'forest',
@@ -354,8 +545,18 @@ const useStoryEngine = () => {
         setCurrentScene(fallbackScene);
         updateSceneAssets(fallbackScene.visuals);
         setStoryProgress(nextProgress);
+        setRecentChoiceTexts(updatedRecentChoices);
+        setKeyDecisionTags(updatedDecisionTags);
 
-        const nextChoices = await generateChoicesForScene(fallbackScene, nextSceneNumber, totalScenes);
+        const nextChoices = await generateChoicesForScene(
+          fallbackScene,
+          nextSceneNumber,
+          totalScenes,
+          undefined,
+          choiceText,
+          updatedRecentChoices,
+          arc
+        );
 
         if (isFinalScene) {
           await appendCompletedStory(selectedCharacter.id, totalScenes, fallbackScene.text);
@@ -369,6 +570,8 @@ const useStoryEngine = () => {
           storyProgress: nextProgress,
           currentScene: fallbackScene,
           currentChoices: nextChoices,
+          recentChoiceTexts: updatedRecentChoices,
+          keyDecisionTags: updatedDecisionTags,
           startedAt: storyStartedAt ?? Date.now(),
           updatedAt: Date.now(),
         });
@@ -383,8 +586,6 @@ const useStoryEngine = () => {
       selectedCharacter,
       storyProgress,
       storyStartedAt,
-      storyProgress.currentScene,
-      storyProgress.totalScenes,
       updateSceneAssets,
     ]
   );
@@ -423,19 +624,34 @@ const useStoryEngine = () => {
       const choice = currentChoices.find((currentChoice) => currentChoice.id === choiceId);
       if (choice && currentScene) {
         const updatedChoices = [...storyProgress.choices, choiceId];
+        const updatedRecentChoices = [...recentChoiceTexts, choice.text].slice(-MAX_RECENT_CHOICES);
+
+        const nextDecisionTag = inferDecisionTag(choice.text);
+        const updatedDecisionTags = [...keyDecisionTags, nextDecisionTag].slice(-MAX_DECISION_TAGS);
 
         setStoryProgress((prev) => ({
           ...prev,
           choices: updatedChoices,
         }));
 
-        await nextScene(currentScene, choice.text, updatedChoices);
+        setRecentChoiceTexts(updatedRecentChoices);
+        setKeyDecisionTags(updatedDecisionTags);
+
+        await nextScene(
+          currentScene,
+          choice.text,
+          updatedChoices,
+          updatedRecentChoices,
+          updatedDecisionTags
+        );
       }
     },
     [
       currentChoices,
       currentScene,
+      keyDecisionTags,
       nextScene,
+      recentChoiceTexts,
       storyProgress.choices,
       storyProgress.currentScene,
       storyProgress.totalScenes,
@@ -454,6 +670,8 @@ const useStoryEngine = () => {
     setSelectedCharacter(null);
     setCurrentAssets(null);
     setStoryStartedAt(null);
+    setRecentChoiceTexts([]);
+    setKeyDecisionTags([]);
     void clearActiveStory();
     void refreshSavedStories();
   }, [appSettings.maxScenes, refreshSavedStories]);
