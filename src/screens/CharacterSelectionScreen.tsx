@@ -7,14 +7,14 @@ import React from 'react';
 import { View, StyleSheet, ScrollView, Dimensions, Text, TouchableOpacity } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { NavigationProp } from '@react-navigation/native';
 import Header from '../components/Header';
 import ProgressBar from '../components/ProgressBar';
 import CharacterCard from '../components/CharacterCard';
 import MagicButton from '../components/MagicButton';
-import { gradients } from '../theme/colors';
+import { colors, gradients } from '../theme/colors';
 import useStoryEngine from '../hooks/useStoryEngine';
 
 type CharacterSelectionScreenNavigationProp = NavigationProp<RootStackParamList>;
@@ -23,9 +23,24 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const CharacterSelectionScreen: React.FC = () => {
   const navigation = useNavigation<CharacterSelectionScreenNavigationProp>();
-  const { selectCharacter, selectedCharacter, getAllCharacters } = useStoryEngine();
+  const {
+    clearSavedStoryProgress,
+    isSavedStoriesReady,
+    refreshSavedStories,
+    resumeStorySummary,
+    selectCharacter,
+    selectedCharacter,
+    storyHistory,
+    getAllCharacters,
+  } = useStoryEngine();
 
   const characters = getAllCharacters();
+
+  useFocusEffect(
+    React.useCallback(() => {
+      void refreshSavedStories();
+    }, [refreshSavedStories])
+  );
 
   const handleCharacterSelect = (characterId: string) => {
     selectCharacter(characterId);
@@ -35,6 +50,18 @@ const CharacterSelectionScreen: React.FC = () => {
     if (selectedCharacter) {
       navigation.navigate('Story', { characterId: selectedCharacter.id });
     }
+  };
+
+  const handleResumeStory = () => {
+    if (!resumeStorySummary) {
+      return;
+    }
+
+    navigation.navigate('Story', { characterId: resumeStorySummary.characterId });
+  };
+
+  const handleReplayFromHistory = (characterId: string) => {
+    navigation.navigate('Story', { characterId });
   };
 
   const settingsButton = (
@@ -73,6 +100,50 @@ const CharacterSelectionScreen: React.FC = () => {
         <Text style={styles.subtitle}>Un personnage va t'accompagner dans cette aventure</Text>
       </View>
 
+      {isSavedStoriesReady && resumeStorySummary && (
+        <View style={styles.resumeContainer}>
+          <Text style={styles.sectionTitle}>Histoire en cours</Text>
+          <Text style={styles.resumeText}>
+            {resumeStorySummary.characterName} - scene {resumeStorySummary.currentScene}/{resumeStorySummary.totalScenes}
+          </Text>
+          <View style={styles.resumeButtonsRow}>
+            <MagicButton
+              title="Reprendre l'histoire"
+              onPress={handleResumeStory}
+              variant="secondary"
+              style={styles.resumeButton}
+            />
+            <MagicButton
+              title="Effacer"
+              onPress={() => {
+                void clearSavedStoryProgress();
+              }}
+              variant="tertiary"
+              style={styles.resumeButton}
+            />
+          </View>
+        </View>
+      )}
+
+      {isSavedStoriesReady && storyHistory.length > 0 && (
+        <View style={styles.historyContainer}>
+          <Text style={styles.sectionTitle}>Historique des contes</Text>
+          {storyHistory.slice(0, 3).map((historyItem) => (
+            <TouchableOpacity
+              key={historyItem.id}
+              style={styles.historyItem}
+              onPress={() => handleReplayFromHistory(historyItem.characterId)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.historyTitle}>
+                {historyItem.characterName} - {historyItem.totalScenes} scenes
+              </Text>
+              <Text style={styles.historyPreview}>{historyItem.endingPreview}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+
       {/* Characters List */}
       <ScrollView
         style={styles.charactersContainer}
@@ -110,7 +181,7 @@ const CharacterSelectionScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#E6F7FF',
+    backgroundColor: colors.background.primary,
   },
   progressContainer: {
     paddingHorizontal: 20,
@@ -124,14 +195,70 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#2C3E50',
+    color: colors.text.primary,
     marginBottom: 8,
     textAlign: 'center',
   },
   subtitle: {
     fontSize: 16,
-    color: '#7F8C8D',
+    color: colors.text.secondary,
     textAlign: 'center',
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.text.primary,
+    marginBottom: 8,
+  },
+  resumeContainer: {
+    marginHorizontal: 20,
+    marginBottom: 14,
+    padding: 16,
+    borderRadius: 16,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  resumeText: {
+    fontSize: 14,
+    color: colors.text.secondary,
+    marginBottom: 12,
+  },
+  resumeButtonsRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  resumeButton: {
+    flex: 1,
+    minWidth: 0,
+    paddingHorizontal: 10,
+    paddingVertical: 12,
+  },
+  historyContainer: {
+    marginHorizontal: 20,
+    marginBottom: 12,
+    padding: 16,
+    borderRadius: 16,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  historyItem: {
+    marginTop: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: colors.background.primary,
+  },
+  historyTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.text.primary,
+    marginBottom: 4,
+  },
+  historyPreview: {
+    fontSize: 13,
+    color: colors.text.secondary,
   },
   charactersContainer: {
     flex: 1,

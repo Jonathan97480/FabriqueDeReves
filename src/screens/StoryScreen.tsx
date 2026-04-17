@@ -3,7 +3,7 @@
  * Écran principal de l'histoire interactive
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, StyleSheet, ScrollView, Dimensions, TouchableOpacity, Text } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
@@ -15,7 +15,10 @@ import ProgressBar from '../components/ProgressBar';
 import VisualScene from '../components/VisualScene';
 import StoryText from '../components/StoryText';
 import ChoiceButton from '../components/ChoiceButton';
-import { gradients } from '../theme/colors';
+import { DEFAULT_APP_SETTINGS, loadAppSettings } from '../services/AppSettingsConfig';
+import { speakSceneText, stopNarration } from '../services/NarrationService';
+import { AppSettings } from '../types';
+import { colors, gradients } from '../theme/colors';
 import useStoryEngine from '../hooks/useStoryEngine';
 
 type StoryScreenNavigationProp = NavigationProp<RootStackParamList>;
@@ -34,6 +37,7 @@ const StoryScreen: React.FC = () => {
     currentAssets,
     makeChoice,
     getProgressPercentage,
+    isStoryComplete,
     resetStory,
     selectedCharacter,
     startStory,
@@ -41,25 +45,71 @@ const StoryScreen: React.FC = () => {
 
   const [showChoices, setShowChoices] = useState(false);
   const [showQuitDialog, setShowQuitDialog] = useState(false);
+  const [voiceSettings, setVoiceSettings] = useState<AppSettings>({ ...DEFAULT_APP_SETTINGS });
+  const startedCharacterRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    loadAppSettings().then(setVoiceSettings).catch(() => {
+      setVoiceSettings({ ...DEFAULT_APP_SETTINGS });
+    });
+  }, []);
 
   useEffect(() => {
     if (characterId) {
+      if (startedCharacterRef.current === characterId) {
+        return;
+      }
+
+      startedCharacterRef.current = characterId;
       startStory(characterId);
     } else {
       navigation.navigate('CharacterSelection');
     }
-  }, [characterId]);
+  }, [characterId, navigation, startStory]);
 
   // Masquer les choix dès qu'une nouvelle scène arrive
   useEffect(() => {
     setShowChoices(false);
   }, [currentScene?.id]);
 
+  useEffect(() => {
+    if (!currentScene || !voiceSettings.autoPlayNarration) {
+      return;
+    }
+
+    speakSceneText(
+      currentScene.text,
+      voiceSettings.narratorEngine,
+      voiceSettings.narratorVoiceGender,
+      voiceSettings.narratorLanguage
+    );
+
+    return () => {
+      stopNarration();
+    };
+  }, [
+    currentScene?.id,
+    currentScene?.text,
+    voiceSettings.autoPlayNarration,
+    voiceSettings.narratorEngine,
+    voiceSettings.narratorVoiceGender,
+    voiceSettings.narratorLanguage,
+  ]);
+
+  useEffect(() => {
+    return () => {
+      stopNarration();
+    };
+  }, []);
+
+  const storyComplete = isStoryComplete();
+
   const handleStoryTextComplete = () => {
     setShowChoices(true);
   };
 
   const handleChoice = (choiceId: string) => {
+    stopNarration();
     makeChoice(choiceId);
     setShowChoices(false);
   };
@@ -69,13 +119,25 @@ const StoryScreen: React.FC = () => {
   };
 
   const handleQuitConfirm = () => {
-    resetStory();
-    // Navigation vers l'écran de sélection
+    stopNarration();
+    // Retour sans effacer l'histoire: la reprise est disponible depuis l'accueil.
     navigation.navigate('CharacterSelection');
   };
 
   const handleQuitCancel = () => {
     setShowQuitDialog(false);
+  };
+
+  const handleRestartStory = () => {
+    if (!characterId) {
+      return;
+    }
+
+    stopNarration();
+    startedCharacterRef.current = characterId;
+    setShowChoices(false);
+    resetStory();
+    startStory(characterId);
   };
 
   // Afficher un état de chargement si aucune scène n'est chargée
@@ -106,7 +168,7 @@ const StoryScreen: React.FC = () => {
         onBackPress={() => navigation.goBack()}
         rightComponent={
           <TouchableOpacity onPress={handleBack}>
-            <Ionicons name="close" size={24} color="#2C3E50" />
+            <Ionicons name="close" size={24} color={colors.text.primary} />
           </TouchableOpacity>
         }
       />
@@ -143,7 +205,7 @@ const StoryScreen: React.FC = () => {
         </View>
 
         {/* Choices */}
-        {showChoices && currentChoices.length > 0 && (
+        {showChoices && !storyComplete && currentChoices.length > 0 && (
           <View style={styles.choicesContainer}>
             {currentChoices.map((choice) => (
               <ChoiceButton
@@ -157,6 +219,21 @@ const StoryScreen: React.FC = () => {
             ))}
           </View>
         )}
+
+        {showChoices && storyComplete && (
+          <View style={styles.endingCard}>
+            <Text style={styles.endingTitle}>Fin du conte</Text>
+            <Text style={styles.endingText}>
+              Cette aventure est terminée. Tu peux relancer une nouvelle histoire ou revenir choisir un autre héros.
+            </Text>
+            <TouchableOpacity style={styles.endingPrimaryButton} onPress={handleRestartStory}>
+              <Text style={styles.endingPrimaryButtonText}>Rejouer avec ce héros</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.endingSecondaryButton} onPress={handleQuitConfirm}>
+              <Text style={styles.endingSecondaryButtonText}>Retour aux personnages</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </ScrollView>
 
       {/* Quit Dialog */}
@@ -165,7 +242,7 @@ const StoryScreen: React.FC = () => {
           <View style={styles.quitDialog}>
             <Text style={styles.quitDialogTitle}>Quitter l'histoire?</Text>
             <Text style={styles.quitDialogText}>
-              Ta progression sera perdue. Es-tu sûr de vouloir quitter?
+              Tu peux quitter et reprendre cette histoire plus tard depuis l'accueil.
             </Text>
             <View style={styles.quitDialogButtons}>
               <TouchableOpacity
@@ -179,7 +256,7 @@ const StoryScreen: React.FC = () => {
                 onPress={handleQuitConfirm}
               >
                 <Text style={[styles.quitDialogButtonText, styles.quitDialogButtonTextConfirm]}>
-                  Oui, quitter
+                  Quitter
                 </Text>
               </TouchableOpacity>
             </View>
@@ -193,7 +270,7 @@ const StoryScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#E6F7FF',
+    backgroundColor: colors.background.primary,
   },
   loadingContainer: {
     flex: 1,
@@ -202,7 +279,7 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     fontSize: 20,
-    color: '#2C3E50',
+    color: colors.text.primary,
     fontWeight: 'bold',
   },
   progressContainer: {
@@ -222,6 +299,53 @@ const styles = StyleSheet.create({
   choicesContainer: {
     marginTop: 20,
   },
+  endingCard: {
+    marginTop: 20,
+    padding: 20,
+    borderRadius: 20,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  endingTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: colors.text.primary,
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  endingText: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: colors.text.secondary,
+    textAlign: 'center',
+  },
+  endingPrimaryButton: {
+    marginTop: 18,
+    paddingVertical: 14,
+    borderRadius: 14,
+    backgroundColor: colors.purple,
+    alignItems: 'center',
+  },
+  endingPrimaryButtonText: {
+    color: colors.text.white,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  endingSecondaryButton: {
+    marginTop: 10,
+    paddingVertical: 14,
+    borderRadius: 14,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+  },
+  endingSecondaryButtonText: {
+    color: colors.text.primary,
+    fontSize: 15,
+    fontWeight: '600',
+  },
   quitDialogContainer: {
     position: 'absolute',
     top: 0,
@@ -234,12 +358,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 40,
   },
   quitDialog: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.card,
     borderRadius: 20,
     padding: 25,
     width: '100%',
     maxWidth: 400,
-    shadowColor: '#000',
+    shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
     shadowRadius: 10,
@@ -248,13 +372,13 @@ const styles = StyleSheet.create({
   quitDialogTitle: {
     fontSize: 22,
     fontWeight: 'bold',
-    color: '#2C3E50',
+    color: colors.text.primary,
     marginBottom: 10,
     textAlign: 'center',
   },
   quitDialogText: {
     fontSize: 16,
-    color: '#7F8C8D',
+    color: colors.text.secondary,
     textAlign: 'center',
     marginBottom: 25,
     lineHeight: 24,
@@ -269,20 +393,20 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
     borderRadius: 12,
     borderWidth: 2,
-    borderColor: '#FF9EC8',
+    borderColor: colors.pink,
     justifyContent: 'center',
     alignItems: 'center',
   },
   quitDialogButtonConfirm: {
-    backgroundColor: '#FF9EC8',
+    backgroundColor: colors.pink,
   },
   quitDialogButtonText: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#FF9EC8',
+    color: colors.pink,
   },
   quitDialogButtonTextConfirm: {
-    color: '#FFFFFF',
+    color: colors.text.white,
   },
 });
 
