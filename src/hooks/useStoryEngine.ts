@@ -180,8 +180,8 @@ const useStoryEngine = () => {
   const [isSavedStoriesReady, setIsSavedStoriesReady] = useState(false);
   const [currentAssets, setCurrentAssets] = useState<{
     background: number | { color: string; tag: string; isPlaceholder: boolean };
-    hero: number | { color: string; tag: string; isPlaceholder: boolean };
-    item: number | { color: string; tag: string; isPlaceholder: boolean };
+    hero: number | { color: string; tag: string; isPlaceholder: boolean } | null;
+    item: number | { color: string; tag: string; isPlaceholder: boolean } | null;
     effect: number | { color: string; tag: string; isPlaceholder: boolean };
   } | null>(null);
 
@@ -209,8 +209,8 @@ const useStoryEngine = () => {
   const updateSceneAssets = useCallback((visuals: StoryScene['visuals']) => {
     const assets = {
       background: AssetManager.getAssetOrPlaceholder('backgrounds', visuals.bg),
-      hero: AssetManager.getAssetOrPlaceholder('heroes', visuals.hero),
-      item: AssetManager.getAssetOrPlaceholder('items', visuals.item),
+      hero: visuals.hero === 'none' ? null : AssetManager.getAssetOrPlaceholder('heroes', visuals.hero),
+      item: visuals.item === 'none' ? null : AssetManager.getAssetOrPlaceholder('items', visuals.item),
       effect: AssetManager.getAssetOrPlaceholder('effects', visuals.effect),
     };
 

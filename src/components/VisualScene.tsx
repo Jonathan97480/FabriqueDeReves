@@ -16,8 +16,8 @@ import AssetImage from './AssetImage';
 
 interface VisualSceneProps {
   background: number | { color: string; tag: string; isPlaceholder: boolean };
-  hero: number | { color: string; tag: string; isPlaceholder: boolean };
-  item: number | { color: string; tag: string; isPlaceholder: boolean };
+  hero: number | { color: string; tag: string; isPlaceholder: boolean } | null;
+  item: number | { color: string; tag: string; isPlaceholder: boolean } | null;
   effect: number | { color: string; tag: string; isPlaceholder: boolean };
   onImageLoad?: () => void;
 }
@@ -99,24 +99,28 @@ const VisualScene: React.FC<VisualSceneProps> = ({
       </Animated.View>
 
       {/* Layer 3: Hero (Héros - Pose spécifique en PNG transparent) */}
-      <Animated.View style={[styles.heroLayer, heroAnimatedStyle]}>
-        <AssetImage
-          source={hero}
-          style={styles.heroImage}
-          resizeMode="contain"
-          fallbackEmoji="🧙"
-        />
-      </Animated.View>
+      {hero !== null && (
+        <Animated.View style={[styles.heroLayer, heroAnimatedStyle]}>
+          <AssetImage
+            source={hero}
+            style={styles.heroImage}
+            resizeMode="contain"
+            fallbackEmoji="🧙"
+          />
+        </Animated.View>
+      )}
 
       {/* Layer 4: Item (Objet magique - PNG transparent) */}
-      <Animated.View style={[styles.itemLayer, itemAnimatedStyle]}>
-        <AssetImage
-          source={item}
-          style={styles.itemImage}
-          resizeMode="contain"
-          fallbackEmoji="🌟"
-        />
-      </Animated.View>
+      {item !== null && (
+        <Animated.View style={[styles.itemLayer, itemAnimatedStyle]}>
+          <AssetImage
+            source={item}
+            style={styles.itemImage}
+            resizeMode="contain"
+            fallbackEmoji="🌟"
+          />
+        </Animated.View>
+      )}
     </View>
   );
 };

@@ -34,14 +34,99 @@ interface ChoiceGenerationContext {
   arcObjective?: string;
 }
 
-const VALID_BACKGROUNDS = ['forest', 'castle', 'space', 'ocean', 'mountain', 'village', 'garden', 'cave'];
-const VALID_ITEMS = ['wand', 'compass', 'mirror', 'book', 'crown', 'key', 'lamp', 'flower', 'star'];
+const VALID_BACKGROUNDS = ['forest', 'castle', 'space', 'ocean', 'mountain', 'village', 'garden', 'cave', 'spaceship_cockpit', 'spaceship_corridor'];
+const VALID_ITEMS = ['wand', 'compass', 'mirror', 'book', 'crown', 'key', 'lamp', 'flower', 'star', 'potion', 'spaceship', 'rocket'];
 const VALID_EFFECTS = ['stars', 'rain', 'snow', 'fireflies', 'magic', 'clouds'];
 const VALID_COLORS = ['green', 'purple', 'pink', 'orange'];
 const VALID_ICONS = ['compass', 'cave', 'fairy', 'star', 'map', 'key'];
-const VALID_HERO_EMOTIONS = ['happy', 'brave', 'curious', 'thinking'];
+const VALID_HERO_EMOTIONS = ['happy', 'brave', 'curious', 'thinking', 'scared', 'pointing'];
 
-const SYSTEM_PROMPT_SCENE = `Tu es un conteur pour enfants expert en narration interactive.
+// ─── Catalogue des poses par héros ───────────────────────────────────────────
+const HERO_CATALOG: Record<string, Array<{ tag: string; description: string }>> = {
+  leo: [
+    { tag: 'leo_happy',    description: 'joyeux, souriant' },
+    { tag: 'leo_brave',    description: 'en train de courir, courageux' },
+    { tag: 'leo_curious',  description: 'tient une boussole à la main' },
+    { tag: 'leo_thinking', description: 'pensif, neutre' },
+    { tag: 'leo_scared',   description: 'apeuré, surpris' },
+    { tag: 'leo_pointing', description: 'montre une direction du doigt' },
+  ],
+};
+
+// ─── Règles de conflit visuels ────────────────────────────────────────────────
+interface HeroVisualRule {
+  /** pose → item qu'elle montre visuellement (supprimer couche item si identique) */
+  poseHoldsItem: Record<string, string>;
+  /** backgrounds qui contiennent implicitement le héros → supprimer couche hero */
+  bgContainsHero: string[];
+  /** items qui sont le véhicule/lieu du héros → supprimer couche hero */
+  itemIsHeroVehicle: string[];
+}
+
+const HERO_VISUAL_RULES: Record<string, HeroVisualRule> = {
+  leo: {
+    poseHoldsItem: {
+      leo_curious: 'compass', // hero_léo_tient la boussole
+    },
+    bgContainsHero: ['spaceship_cockpit', 'spaceship_corridor'],
+    itemIsHeroVehicle: ['spaceship', 'rocket'],
+  },
+};
+
+function applyVisualConflictRules(
+  visuals: GemmaResponse['visuals'],
+  characterId: string,
+): GemmaResponse['visuals'] {
+  const rules = HERO_VISUAL_RULES[characterId];
+  if (!rules) return visuals;
+
+  let { bg, hero, item, effect } = visuals;
+
+  // Règle 1 : la pose tient déjà cet item → masquer couche item
+  const heldItem = rules.poseHoldsItem[hero];
+  if (heldItem && item === heldItem) {
+    item = 'none';
+  }
+
+  // Règle 2 : décor = intérieur du véhicule du héros → masquer couche hero
+  if (rules.bgContainsHero.includes(bg)) {
+    hero = 'none';
+  }
+
+  // Règle 3 : l'item EST le véhicule → masquer couche hero
+  if (rules.itemIsHeroVehicle.includes(item)) {
+    hero = 'none';
+  }
+
+  return { bg, hero, item, effect };
+}
+
+// ─── Prompt dynamique par personnage ─────────────────────────────────────────
+function buildSceneSystemPrompt(characterId: string): string {
+  const poses = HERO_CATALOG[characterId] ?? [];
+  const posesList = poses.length > 0
+    ? poses.map((p) => `"${p.tag}" (${p.description})`).join(', ')
+    : `"${characterId}_happy", "${characterId}_brave", "${characterId}_curious", "${characterId}_thinking"`;
+
+  const rules = HERO_VISUAL_RULES[characterId];
+  let conflictBlock = '';
+  if (rules) {
+    const lines: string[] = [];
+    for (const [pose, holdItem] of Object.entries(rules.poseHoldsItem)) {
+      lines.push(`  - hero="${pose}" montre déjà "${holdItem}" → NE PAS mettre item="${holdItem}" (doublon visuel)`);
+    }
+    if (rules.bgContainsHero.length > 0) {
+      lines.push(`  - bg dans [${rules.bgContainsHero.map((b) => `"${b}"`).join(', ')}] : le héros EST dans ce décor → mettre hero="none"`);
+    }
+    if (rules.itemIsHeroVehicle.length > 0) {
+      lines.push(`  - item dans [${rules.itemIsHeroVehicle.map((i) => `"${i}"`).join(', ')}] : le héros est à bord → mettre hero="none"`);
+    }
+    if (lines.length > 0) {
+      conflictBlock = `\nRègles visuelles OBLIGATOIRES :\n${lines.join('\n')}`;
+    }
+  }
+
+  return `Tu es un conteur pour enfants expert en narration interactive.
 Mission: produire une scène qui fait progresser l'aventure avec cohérence et variété.
 Contraintes narratives:
 - 2 a 4 phrases claires, imagées, adaptées aux enfants (6-10 ans).
@@ -49,10 +134,18 @@ Contraintes narratives:
 - Evite la repetition de formulations entre scenes consecutives.
 - Si c'est une scene finale, conclure avec une fin douce, satisfaisante et memorisable.
 
+Images disponibles :
+  Décors (bg): "forest", "castle", "space", "ocean", "mountain", "village", "garden", "cave", "spaceship_cockpit", "spaceship_corridor"
+  Poses héros (hero): ${posesList}
+  Objets (item): "wand", "compass", "mirror", "book", "crown", "key", "lamp", "flower", "star", "potion", "spaceship", "rocket"
+  Effets (effect): "stars", "rain", "snow", "fireflies", "magic", "clouds"${conflictBlock}
+
+Choisis les tags les plus adaptés à la scène. Utilise "none" pour hero ou item si une règle s'applique.
 Réponds en JSON strict uniquement.
 Format obligatoire :
-{"text":"<2-3 phrases pour enfants en français>","visuals":{"bg":"<forest|castle|space|ocean|mountain|village|garden|cave>","hero":"<HERO_ID>_<happy|brave|curious|thinking>","item":"<wand|compass|mirror|book|crown|key|lamp|flower|star>","effect":"<stars|rain|snow|fireflies|magic|clouds>"}}
+{"text":"<2-3 phrases pour enfants en français>","visuals":{"bg":"<tag>","hero":"<tag ou none>","item":"<tag ou none>","effect":"<tag>"}}
 Réponds UNIQUEMENT avec le JSON, sans texte avant ni après.`;
+}
 
 const SYSTEM_PROMPT_CHOICES = `Tu es un conteur pour enfants. Génère exactement 3 choix utiles et logiques.
 Contraintes qualité:
@@ -93,13 +186,15 @@ const normalizeSceneText = (value: string): string => {
 };
 
 const normalizeHeroTag = (tag: string, characterId: string) => {
-  const [rawId, rawEmotion] = tag.split('_');
-  const safeId = rawId === characterId ? characterId : characterId;
-  const safeEmotion = VALID_HERO_EMOTIONS.includes(rawEmotion) ? rawEmotion : 'happy';
-  return `${safeId}_${safeEmotion}`;
+  if (tag === 'none') return 'none';
+  const parts = tag.split('_');
+  const lastPart = parts[parts.length - 1];
+  const safeEmotion = VALID_HERO_EMOTIONS.includes(lastPart) ? lastPart : 'happy';
+  return `${characterId}_${safeEmotion}`;
 };
 
 const normalizeVisualTag = (value: string, allowed: string[], fallback: string) => {
+  if (value === 'none') return 'none';
   return allowed.includes(value) ? value : fallback;
 };
 
@@ -390,7 +485,7 @@ const useGemmaGGUF = () => {
       const config = currentConfig ?? (await loadAIConfig());
       setIsLoading(true);
       try {
-        const system = SYSTEM_PROMPT_SCENE.replace('HERO_ID', characterId);
+        const system = buildSceneSystemPrompt(characterId);
         const raw = await callAI(config, system, prompt, 300);
         console.log(`[${config.provider}] Scène:`, raw);
 
@@ -402,14 +497,18 @@ const useGemmaGGUF = () => {
         const parsedText = normalizeSceneText(String(parsedObject.text ?? ''));
         const visuals = (parsedObject.visuals ?? {}) as Record<string, unknown>;
 
+        const normalizedVisuals: GemmaResponse['visuals'] = {
+          bg: normalizeVisualTag(String(visuals.bg ?? ''), VALID_BACKGROUNDS, 'forest'),
+          hero: normalizeHeroTag(String(visuals.hero ?? `${characterId}_happy`), characterId),
+          item: normalizeVisualTag(String(visuals.item ?? ''), VALID_ITEMS, 'star'),
+          effect: normalizeVisualTag(String(visuals.effect ?? ''), VALID_EFFECTS, 'magic'),
+        };
+
+        const finalVisuals = applyVisualConflictRules(normalizedVisuals, characterId);
+
         return {
           text: parsedText || createDefaultResponse(characterId).text,
-          visuals: {
-            bg: normalizeVisualTag(String(visuals.bg ?? ''), VALID_BACKGROUNDS, 'forest'),
-            hero: normalizeHeroTag(String(visuals.hero ?? `${characterId}_happy`), characterId),
-            item: normalizeVisualTag(String(visuals.item ?? ''), VALID_ITEMS, 'star'),
-            effect: normalizeVisualTag(String(visuals.effect ?? ''), VALID_EFFECTS, 'magic'),
-          },
+          visuals: finalVisuals,
         };
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);

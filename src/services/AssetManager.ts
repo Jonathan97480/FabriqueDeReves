@@ -9,8 +9,101 @@ interface Placeholder {
   isPlaceholder: boolean;
 }
 
+type AssetSource = number | Placeholder;
+
+const REAL_ASSET_MAP = {
+  backgrounds: {
+    bg_chateau: require('../assets/images/backgrounds/bg_chateau.webp'),
+    bg_espace: require('../assets/images/backgrounds/bg_espace.webp'),
+    bg_foret: require('../assets/images/backgrounds/bg_foret.webp'),
+    bg_grotte: require('../assets/images/backgrounds/bg_grotte.webp'),
+    bg_ocean_1: require('../assets/images/backgrounds/bg_ocean_1.webp'),
+    bg_couloir_vaisseau: require('../assets/images/backgrounds/bg_couloir vaiseau.png'),
+    bg_vaisseau_cockpit: require('../assets/images/backgrounds/bg_vaiseau post de pilotage.png'),
+  },
+  heroes: {
+    hero_leo_joie: require('../assets/images/heroes/leo astronaute/hero_léo_joie.png'),
+    hero_leo_neutre: require('../assets/images/heroes/leo astronaute/hero_léo_neutre.png'),
+    hero_leo_peur: require('../assets/images/heroes/leo astronaute/hero_léo_peur.png'),
+    hero_leo_run: require('../assets/images/heroes/leo astronaute/hero_léo_run.png'),
+    hero_leo_direction: require('../assets/images/heroes/leo astronaute/hero_léo_montre une direction.png'),
+    hero_leo_boussole: require('../assets/images/heroes/leo astronaute/hero_léo_tient la boussole.png'),
+  },
+  items: {
+    item_baguette: require('../assets/images/items/item_baguette.png'),
+    item_boussole: require('../assets/images/items/item_boussole.png'),
+    item_cle: require('../assets/images/items/item_cle.png'),
+    item_potion: require('../assets/images/items/item_potion.png'),
+    item_vaisseau: require('../assets/images/items/item_vaiseau.png'),
+  },
+  effects: {
+    fx_brume: require('../assets/images/effects/fx_brume.png'),
+    fx_bulles: require('../assets/images/effects/fx_bulles.png'),
+    fx_etoiles: require('../assets/images/effects/fx_etoiles.png'),
+  },
+};
+
+const TAG_ALIASES = {
+  backgrounds: {
+    forest: 'bg_foret',
+    castle: 'bg_chateau',
+    space: 'bg_espace',
+    ocean: 'bg_ocean_1',
+    cave: 'bg_grotte',
+    spaceship_corridor: 'bg_couloir_vaisseau',
+    spaceship_cockpit: 'bg_vaisseau_cockpit',
+    cockpit: 'bg_vaisseau_cockpit',
+    corridor: 'bg_couloir_vaisseau',
+  },
+  heroes: {
+    leo_happy: 'hero_leo_joie',
+    leo_brave: 'hero_leo_run',
+    leo_curious: 'hero_leo_boussole',
+    leo_thinking: 'hero_leo_neutre',
+    leo_scared: 'hero_leo_peur',
+    leo_pointing: 'hero_leo_direction',
+  },
+  items: {
+    wand: 'item_baguette',
+    compass: 'item_boussole',
+    key: 'item_cle',
+    potion: 'item_potion',
+    spaceship: 'item_vaisseau',
+    rocket: 'item_vaisseau',
+  },
+  effects: {
+    stars: 'fx_etoiles',
+    clouds: 'fx_brume',
+    magic: 'fx_bulles',
+  },
+};
+
 class AssetManager {
   private placeholderColors: any;
+
+  private resolveAssetTag(category: 'backgrounds' | 'heroes' | 'items' | 'effects', tag: string): string {
+    const aliases = TAG_ALIASES[category] as Record<string, string>;
+    return aliases[tag] ?? tag;
+  }
+
+  private getPlaceholder(category: string, tag: string): Placeholder {
+    const color =
+      this.placeholderColors[category]?.[tag] || this.placeholderColors[category]?.default || '#BDC3C7';
+    return {
+      color,
+      tag: tag || 'default',
+      isPlaceholder: true,
+    };
+  }
+
+  private getRealAsset(
+    category: 'backgrounds' | 'heroes' | 'items' | 'effects',
+    tag: string
+  ): number | null {
+    const resolvedTag = this.resolveAssetTag(category, tag);
+    const categoryMap = REAL_ASSET_MAP[category] as Record<string, number>;
+    return categoryMap[resolvedTag] ?? null;
+  }
 
   constructor() {
     // Couleurs pour les placeholders
@@ -78,13 +171,9 @@ class AssetManager {
    * @param {string} tag - Le tag de l'IA (ex: 'forest', 'castle')
    * @returns {Placeholder} - Un placeholder coloré
    */
-  getBackground(tag: string): Placeholder {
-    const color = this.placeholderColors.backgrounds[tag] || this.placeholderColors.backgrounds.default;
-    return {
-      color,
-      tag: tag || 'default',
-      isPlaceholder: true,
-    };
+  getBackground(tag: string): AssetSource {
+    const realAsset = this.getRealAsset('backgrounds', tag);
+    return realAsset ?? this.getPlaceholder('backgrounds', tag);
   }
 
   /**
@@ -92,13 +181,9 @@ class AssetManager {
    * @param {string} tag - Le tag combiné (ex: 'leo_happy', 'maya_brave')
    * @returns {Placeholder} - Un placeholder coloré
    */
-  getHero(tag: string): Placeholder {
-    const color = this.placeholderColors.heroes[tag] || this.placeholderColors.heroes.default;
-    return {
-      color,
-      tag: tag || 'default',
-      isPlaceholder: true,
-    };
+  getHero(tag: string): AssetSource {
+    const realAsset = this.getRealAsset('heroes', tag);
+    return realAsset ?? this.getPlaceholder('heroes', tag);
   }
 
   /**
@@ -106,13 +191,9 @@ class AssetManager {
    * @param {string} tag - Le tag de l'objet (ex: 'wand', 'compass')
    * @returns {Placeholder} - Un placeholder coloré
    */
-  getItem(tag: string): Placeholder {
-    const color = this.placeholderColors.items[tag] || this.placeholderColors.items.default;
-    return {
-      color,
-      tag: tag || 'default',
-      isPlaceholder: true,
-    };
+  getItem(tag: string): AssetSource {
+    const realAsset = this.getRealAsset('items', tag);
+    return realAsset ?? this.getPlaceholder('items', tag);
   }
 
   /**
@@ -120,13 +201,9 @@ class AssetManager {
    * @param {string} tag - Le tag de l'effet (ex: 'stars', 'rain')
    * @returns {Placeholder} - Un placeholder coloré
    */
-  getEffect(tag: string): Placeholder {
-    const color = this.placeholderColors.effects[tag] || this.placeholderColors.effects.default;
-    return {
-      color,
-      tag: tag || 'default',
-      isPlaceholder: true,
-    };
+  getEffect(tag: string): AssetSource {
+    const realAsset = this.getRealAsset('effects', tag);
+    return realAsset ?? this.getPlaceholder('effects', tag);
   }
 
   /**
@@ -235,13 +312,24 @@ class AssetManager {
    * @param {string} tag - Le tag
    * @returns {Placeholder} - Un placeholder coloré
    */
-  getAssetOrPlaceholder(category: string, tag: string): Placeholder {
-    const color = this.placeholderColors[category]?.[tag] || this.placeholderColors[category]?.default || '#BDC3C7';
-    return {
-      color,
-      tag: tag || 'default',
-      isPlaceholder: true,
-    };
+  getAssetOrPlaceholder(category: string, tag: string): AssetSource {
+    if (category === 'backgrounds') {
+      return this.getBackground(tag);
+    }
+
+    if (category === 'heroes') {
+      return this.getHero(tag);
+    }
+
+    if (category === 'items') {
+      return this.getItem(tag);
+    }
+
+    if (category === 'effects') {
+      return this.getEffect(tag);
+    }
+
+    return this.getPlaceholder(category, tag);
   }
 
   /**
