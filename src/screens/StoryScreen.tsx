@@ -30,12 +30,16 @@ const StoryScreen: React.FC = () => {
   const navigation = useNavigation<StoryScreenNavigationProp>();
   const route = useRoute<StoryScreenRouteProp>();
   const characterId = route.params?.characterId;
+  const mode = route.params?.mode ?? 'classic';
+  const guidedScenes = route.params?.guidedScenes;
   const {
     currentScene,
     storyProgress,
     currentChoices,
     currentAssets,
     makeChoice,
+    advanceGuidedScene,
+    storyMode,
     getProgressPercentage,
     isStoryComplete,
     resetStory,
@@ -46,7 +50,7 @@ const StoryScreen: React.FC = () => {
   const [showChoices, setShowChoices] = useState(false);
   const [showQuitDialog, setShowQuitDialog] = useState(false);
   const [voiceSettings, setVoiceSettings] = useState<AppSettings>({ ...DEFAULT_APP_SETTINGS });
-  const startedCharacterRef = useRef<string | null>(null);
+  const startedStoryKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     loadAppSettings().then(setVoiceSettings).catch(() => {
@@ -56,16 +60,21 @@ const StoryScreen: React.FC = () => {
 
   useEffect(() => {
     if (characterId) {
-      if (startedCharacterRef.current === characterId) {
+      const guidedSignature = guidedScenes
+        ? guidedScenes.map((scene) => `${scene.bg}|${scene.hero}|${scene.item}|${scene.effect}`).join('||')
+        : '';
+      const storyKey = `${characterId}:${mode}:${guidedSignature}`;
+
+      if (startedStoryKeyRef.current === storyKey) {
         return;
       }
 
-      startedCharacterRef.current = characterId;
-      startStory(characterId);
+      startedStoryKeyRef.current = storyKey;
+      startStory(characterId, { mode, guidedScenes });
     } else {
       navigation.navigate('CharacterSelection');
     }
-  }, [characterId, navigation, startStory]);
+  }, [characterId, guidedScenes, mode, navigation, startStory]);
 
   // Masquer les choix dès qu'une nouvelle scène arrive
   useEffect(() => {
@@ -114,6 +123,12 @@ const StoryScreen: React.FC = () => {
     setShowChoices(false);
   };
 
+  const handleGuidedAdvance = () => {
+    stopNarration();
+    setShowChoices(false);
+    advanceGuidedScene();
+  };
+
   const handleBack = () => {
     setShowQuitDialog(!showQuitDialog);
   };
@@ -134,10 +149,10 @@ const StoryScreen: React.FC = () => {
     }
 
     stopNarration();
-    startedCharacterRef.current = characterId;
+    startedStoryKeyRef.current = null;
     setShowChoices(false);
     resetStory();
-    startStory(characterId);
+    startStory(characterId, { mode, guidedScenes });
   };
 
   // Afficher un état de chargement si aucune scène n'est chargée
@@ -204,8 +219,8 @@ const StoryScreen: React.FC = () => {
           />
         </View>
 
-        {/* Choices */}
-        {showChoices && !storyComplete && currentChoices.length > 0 && (
+        {/* Choices (mode classique) */}
+        {showChoices && !storyComplete && storyMode === 'classic' && currentChoices.length > 0 && (
           <View style={styles.choicesContainer}>
             {currentChoices.map((choice) => (
               <ChoiceButton
@@ -217,6 +232,16 @@ const StoryScreen: React.FC = () => {
                 onPress={handleChoice}
               />
             ))}
+          </View>
+        )}
+
+        {/* Bouton "Scène suivante" (mode guidé) */}
+        {showChoices && !storyComplete && storyMode === 'guided' && (
+          <View style={styles.guidedAdvanceContainer}>
+            <TouchableOpacity style={styles.guidedAdvanceButton} onPress={handleGuidedAdvance}>
+              <Ionicons name="arrow-forward-circle" size={22} color="#fff" style={{ marginRight: 8 }} />
+              <Text style={styles.guidedAdvanceText}>Scène suivante</Text>
+            </TouchableOpacity>
           </View>
         )}
 
@@ -298,6 +323,24 @@ const styles = StyleSheet.create({
   },
   choicesContainer: {
     marginTop: 20,
+  },
+  guidedAdvanceContainer: {
+    marginTop: 24,
+    alignItems: 'center',
+  },
+  guidedAdvanceButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#7C5CBF',
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+    borderRadius: 30,
+    elevation: 4,
+  },
+  guidedAdvanceText: {
+    color: '#fff',
+    fontSize: 17,
+    fontWeight: '700',
   },
   endingCard: {
     marginTop: 20,

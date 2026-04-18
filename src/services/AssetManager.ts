@@ -3,15 +3,10 @@
  * Service pour mapper les tags de l'IA vers les fichiers images locaux
  */
 
-interface Placeholder {
-  color: string;
-  tag: string;
-  isPlaceholder: boolean;
-}
+type AssetCategory = 'backgrounds' | 'heroes' | 'items' | 'effects';
+type AssetSource = number | null;
 
-type AssetSource = number | Placeholder;
-
-const REAL_ASSET_MAP = {
+const REAL_ASSET_MAP: Record<AssetCategory, Record<string, number>> = {
   backgrounds: {
     bg_chateau: require('../assets/images/backgrounds/bg_chateau.webp'),
     bg_espace: require('../assets/images/backgrounds/bg_espace.webp'),
@@ -43,7 +38,7 @@ const REAL_ASSET_MAP = {
   },
 };
 
-const TAG_ALIASES = {
+const TAG_ALIASES: Record<AssetCategory, Record<string, string>> = {
   backgrounds: {
     forest: 'bg_foret',
     castle: 'bg_chateau',
@@ -79,164 +74,37 @@ const TAG_ALIASES = {
 };
 
 class AssetManager {
-  private placeholderColors: any;
-
-  private resolveAssetTag(category: 'backgrounds' | 'heroes' | 'items' | 'effects', tag: string): string {
-    const aliases = TAG_ALIASES[category] as Record<string, string>;
+  private resolveAssetTag(category: AssetCategory, tag: string): string {
+    const aliases = TAG_ALIASES[category];
     return aliases[tag] ?? tag;
   }
 
-  private getPlaceholder(category: string, tag: string): Placeholder {
-    const color =
-      this.placeholderColors[category]?.[tag] || this.placeholderColors[category]?.default || '#BDC3C7';
-    return {
-      color,
-      tag: tag || 'default',
-      isPlaceholder: true,
-    };
-  }
-
-  private getRealAsset(
-    category: 'backgrounds' | 'heroes' | 'items' | 'effects',
-    tag: string
-  ): number | null {
+  private getAsset(category: AssetCategory, tag: string): AssetSource {
     const resolvedTag = this.resolveAssetTag(category, tag);
-    const categoryMap = REAL_ASSET_MAP[category] as Record<string, number>;
-    return categoryMap[resolvedTag] ?? null;
+    return REAL_ASSET_MAP[category][resolvedTag] ?? null;
   }
 
-  constructor() {
-    // Couleurs pour les placeholders
-    this.placeholderColors = {
-      backgrounds: {
-        forest: '#2E8B57',
-        castle: '#8B4513',
-        space: '#1a1a2e',
-        ocean: '#4682B4',
-        mountain: '#708090',
-        village: '#DEB887',
-        garden: '#98FB98',
-        cave: '#2F4F4F',
-        default: '#87CEEB',
-      },
-      heroes: {
-        leo_happy: '#FF6B6B',
-        leo_brave: '#4ECDC4',
-        leo_curious: '#45B7D1',
-        leo_thinking: '#96CEB4',
-        maya_happy: '#FFEAA7',
-        maya_brave: '#DDA0DD',
-        maya_curious: '#98D8C8',
-        maya_thinking: '#F7DC6F',
-        spark_happy: '#FFA07A',
-        spark_brave: '#20B2AA',
-        spark_curious: '#FF7F50',
-        spark_thinking: '#6495ED',
-        default: '#95A5A6',
-      },
-      items: {
-        wand: '#9B59B6',
-        compass: '#3498DB',
-        mirror: '#1ABC9C',
-        book: '#F39C12',
-        crown: '#F1C40F',
-        key: '#E74C3C',
-        lamp: '#E67E22',
-        flower: '#2ECC71',
-        star: '#F1C40F',
-        default: '#BDC3C7',
-      },
-      effects: {
-        stars: '#F1C40F',
-        rain: '#3498DB',
-        snow: '#ECF0F1',
-        fireflies: '#F39C12',
-        magic: '#9B59B6',
-        clouds: '#BDC3C7',
-        default: '#95A5A6',
-      },
-      icons: {
-        compass: '#A8E6CF',
-        cave: '#FFB366',
-        fairy: '#D8B5FF',
-        star: '#FF9EC8',
-        map: '#98D8C8',
-        key: '#F39C12',
-      },
-    };
-  }
-
-  /**
-   * Récupère l'image de fond correspondant au tag
-   * @param {string} tag - Le tag de l'IA (ex: 'forest', 'castle')
-   * @returns {Placeholder} - Un placeholder coloré
-   */
   getBackground(tag: string): AssetSource {
-    const realAsset = this.getRealAsset('backgrounds', tag);
-    return realAsset ?? this.getPlaceholder('backgrounds', tag);
+    return this.getAsset('backgrounds', tag);
   }
 
-  /**
-   * Récupère l'image du héros correspondant au tag
-   * @param {string} tag - Le tag combiné (ex: 'leo_happy', 'maya_brave')
-   * @returns {Placeholder} - Un placeholder coloré
-   */
   getHero(tag: string): AssetSource {
-    const realAsset = this.getRealAsset('heroes', tag);
-    return realAsset ?? this.getPlaceholder('heroes', tag);
+    return this.getAsset('heroes', tag);
   }
 
-  /**
-   * Récupère l'objet magique correspondant au tag
-   * @param {string} tag - Le tag de l'objet (ex: 'wand', 'compass')
-   * @returns {Placeholder} - Un placeholder coloré
-   */
   getItem(tag: string): AssetSource {
-    const realAsset = this.getRealAsset('items', tag);
-    return realAsset ?? this.getPlaceholder('items', tag);
+    return this.getAsset('items', tag);
   }
 
-  /**
-   * Récupère l'effet d'ambiance correspondant au tag
-   * @param {string} tag - Le tag de l'effet (ex: 'stars', 'rain')
-   * @returns {Placeholder} - Un placeholder coloré
-   */
   getEffect(tag: string): AssetSource {
-    const realAsset = this.getRealAsset('effects', tag);
-    return realAsset ?? this.getPlaceholder('effects', tag);
+    return this.getAsset('effects', tag);
   }
 
-  /**
-   * Récupère l'animation Lottie correspondant au tag
-   * @param {string} tag - Le tag de l'animation
-   * @returns {string} - Le chemin de l'animation
-   */
-  getAnimation(tag: string): string {
-    // Pour l'instant, retourne une chaîne vide
-    // Les vraies animations seront implémentées plus tard
+  getAnimation(_tag: string): string {
     return '';
   }
 
-  /**
-   * Récupère l'icône correspondant au tag
-   * @param {string} tag - Le tag de l'icône
-   * @returns {Placeholder} - Un placeholder coloré
-   */
-  getIcon(tag: string): Placeholder {
-    const color = this.placeholderColors.icons[tag] || this.placeholderColors.icons.star;
-    return {
-      color,
-      tag: tag || 'star',
-      isPlaceholder: true,
-    };
-  }
-
-  /**
-   * Récupère tous les assets pour une scène donnée
-   * @param {Object} visuals - L'objet visuals de l'IA
-   * @returns {Object} - Tous les placeholders nécessaires
-   */
-  getSceneAssets(visuals: any) {
+  getSceneAssets(visuals: { bg: string; hero: string; item: string; effect: string }) {
     return {
       background: this.getBackground(visuals.bg),
       hero: this.getHero(visuals.hero),
@@ -245,73 +113,54 @@ class AssetManager {
     };
   }
 
-  /**
-   * Récupère les informations sur un personnage
-   * @param {string} characterId - L'ID du personnage
-   * @returns {Object} - Les informations du personnage
-   */
   getCharacterInfo(characterId: string) {
-    const characterMap: any = {
-      'leo': {
+    const leoImage = this.getAssetOrPlaceholder('heroes', 'leo_happy');
+
+    const characterMap = {
+      leo: {
         id: 'leo',
         name: 'Léo',
         description: 'Un astronaute courageux qui explore les étoiles',
-        image: this.getAssetOrPlaceholder('heroes', 'leo_happy'),
+        image: leoImage,
         theme: 'space',
       },
-      'maya': {
+      maya: {
         id: 'maya',
         name: 'Maya',
         description: 'Une princesse curieuse qui aime la nature',
-        image: this.getAssetOrPlaceholder('heroes', 'maya_happy'),
+        image: this.getAssetOrPlaceholder('heroes', 'maya_happy') ?? leoImage,
         theme: 'garden',
       },
-      'spark': {
+      spark: {
         id: 'spark',
         name: 'Étincelle',
         description: 'Un petit dragon amical et espiègle',
-        image: this.getAssetOrPlaceholder('heroes', 'spark_happy'),
+        image: this.getAssetOrPlaceholder('heroes', 'spark_happy') ?? leoImage,
         theme: 'mountain',
       },
     };
 
-    return characterMap[characterId] || characterMap['leo'];
+    return characterMap[characterId as keyof typeof characterMap] || characterMap.leo;
   }
 
-  /**
-   * Liste tous les personnages disponibles
-   * @returns {Array} - Liste des personnages
-   */
   getAllCharacters() {
     return ['leo', 'maya', 'spark'].map((id) => this.getCharacterInfo(id));
   }
 
-  /**
-   * Génère un tag de héros combiné
-   * @param {string} characterId - L'ID du personnage
-   * @param {string} emotion - L'émotion (happy, brave, curious, thinking)
-   * @returns {string} - Le tag combiné
-   */
   generateHeroTag(characterId: string, emotion: string = 'happy'): string {
     return `${characterId}_${emotion}`;
   }
 
-  /**
-   * Valide si un tag existe dans une catégorie
-   * @param {string} category - La catégorie (backgrounds, heroes, items, effects)
-   * @param {string} tag - Le tag à valider
-   * @returns {boolean} - True si le tag existe
-   */
   isValidTag(category: string, tag: string): boolean {
-    return this.placeholderColors[category]?.hasOwnProperty(tag) || false;
+    if (!['backgrounds', 'heroes', 'items', 'effects'].includes(category)) {
+      return false;
+    }
+
+    const typedCategory = category as AssetCategory;
+    const resolvedTag = this.resolveAssetTag(typedCategory, tag);
+    return Object.prototype.hasOwnProperty.call(REAL_ASSET_MAP[typedCategory], resolvedTag);
   }
 
-  /**
-   * Récupère un asset ou un placeholder
-   * @param {string} category - La catégorie
-   * @param {string} tag - Le tag
-   * @returns {Placeholder} - Un placeholder coloré
-   */
   getAssetOrPlaceholder(category: string, tag: string): AssetSource {
     if (category === 'backgrounds') {
       return this.getBackground(tag);
@@ -329,20 +178,12 @@ class AssetManager {
       return this.getEffect(tag);
     }
 
-    return this.getPlaceholder(category, tag);
+    return null;
   }
 
-  /**
-   * Ajoute dynamiquement un nouveau mapping (pour utilisation future avec vrais assets)
-   * @param {string} category - La catégorie
-   * @param {string} tag - Le tag
-   * @param {number} asset - L'asset React Native
-   */
-  addAssetMapping(category: string, tag: string, asset: number): void {
-    // Réservé pour l'intégration future de vrais assets
-    console.log(`Asset mapping added: ${category}/${tag}`);
+  addAssetMapping(_category: string, _tag: string, _asset: number): void {
+    // Réservé pour l'intégration future.
   }
 }
 
-// Export d'une instance singleton
 export default new AssetManager();

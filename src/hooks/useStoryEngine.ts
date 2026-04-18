@@ -23,11 +23,18 @@ import {
   AppSettings,
   Character,
   CompletedStorySummary,
+  GuidedSceneTemplate,
   StoryChoice,
+  StoryMode,
   StoryProgress,
   StoryResumeSummary,
   StoryScene,
 } from '../types';
+
+type StartStoryOptions = {
+  mode?: StoryMode;
+  guidedScenes?: GuidedSceneTemplate[];
+};
 
 type CharacterArc = {
   title: string;
@@ -76,6 +83,45 @@ const DECISION_KEYWORDS: Array<{ tag: string; keywords: string[] }> = [
 
 const MAX_RECENT_CHOICES = 3;
 const MAX_DECISION_TAGS = 6;
+
+const getGuidedTemplate = (
+  guidedScenes: GuidedSceneTemplate[],
+  sceneNumber: number,
+): GuidedSceneTemplate | null => {
+  if (guidedScenes.length === 0) {
+    return null;
+  }
+
+  const index = Math.max(0, Math.min(guidedScenes.length - 1, sceneNumber - 1));
+  return guidedScenes[index] ?? null;
+};
+
+const buildGuidedVisualInstruction = (template: GuidedSceneTemplate): string => {
+  const noteInstruction = template.note?.trim()
+    ? `Intention utilisateur: ${template.note.trim()}.`
+    : '';
+
+  return `Mode guide actif. Utilise EXACTEMENT ces visuels pour cette scene: bg=${template.bg}, hero=${template.hero}, item=${template.item}, effect=${template.effect}. ${noteInstruction}`;
+};
+
+const applyGuidedVisuals = (
+  scene: { text: string; visuals: StoryScene['visuals'] },
+  template: GuidedSceneTemplate | null,
+) => {
+  if (!template) {
+    return scene;
+  }
+
+  return {
+    ...scene,
+    visuals: {
+      bg: template.bg,
+      hero: template.hero,
+      item: template.item,
+      effect: template.effect,
+    },
+  };
+};
 
 const pickCharacterArc = (characterId: string): CharacterArc => {
   return CHARACTER_ARCS[characterId] ?? {
@@ -173,16 +219,18 @@ const useStoryEngine = () => {
   const [selectedCharacter, setSelectedCharacter] = useState<Character | null>(null);
   const [appSettings, setAppSettings] = useState<AppSettings>({ ...DEFAULT_APP_SETTINGS });
   const [storyStartedAt, setStoryStartedAt] = useState<number | null>(null);
+  const [storyMode, setStoryMode] = useState<StoryMode>('classic');
+  const [activeGuidedScenes, setActiveGuidedScenes] = useState<GuidedSceneTemplate[]>([]);
   const [recentChoiceTexts, setRecentChoiceTexts] = useState<string[]>([]);
   const [keyDecisionTags, setKeyDecisionTags] = useState<string[]>([]);
   const [resumeStorySummary, setResumeStorySummary] = useState<StoryResumeSummary | null>(null);
   const [storyHistory, setStoryHistory] = useState<CompletedStorySummary[]>([]);
   const [isSavedStoriesReady, setIsSavedStoriesReady] = useState(false);
   const [currentAssets, setCurrentAssets] = useState<{
-    background: number | { color: string; tag: string; isPlaceholder: boolean };
-    hero: number | { color: string; tag: string; isPlaceholder: boolean } | null;
-    item: number | { color: string; tag: string; isPlaceholder: boolean } | null;
-    effect: number | { color: string; tag: string; isPlaceholder: boolean };
+    background: number | null;
+    hero: number | null;
+    item: number | null;
+    effect: number | null;
   } | null>(null);
 
   const { generateStoryScene, generateChoices } = useGemmaGGUF();
@@ -238,6 +286,12 @@ const useStoryEngine = () => {
         return [];
       }
 
+      // En mode guidé : pas de choix, l'histoire s'enchaîne automatiquement
+      if (storyMode === 'guided') {
+        setCurrentChoices([]);
+        return [];
+      }
+
       try {
         const activeArc = arcOverride ?? pickCharacterArc(activeCharacterId);
         const recentChoicesForPrompt = (recentChoicesOverride ?? recentChoiceTexts).slice(-MAX_RECENT_CHOICES);
@@ -283,7 +337,7 @@ const useStoryEngine = () => {
         return defaultChoices;
       }
     },
-    [generateChoices, recentChoiceTexts, selectedCharacter]
+    [generateChoices, recentChoiceTexts, selectedCharacter, storyMode]
   );
 
   const selectCharacter = useCallback((characterId: string) => {
@@ -297,11 +351,19 @@ const useStoryEngine = () => {
   }, []);
 
   const startStory = useCallback(
-    async (characterId: string) => {
+    async (characterId: string, options: StartStoryOptions = {}) => {
+      const requestedMode = options.mode ?? 'classic';
+      const guidedScenes = options.guidedScenes ?? [];
+
+      setStoryMode(requestedMode);
+      setActiveGuidedScenes(guidedScenes);
       selectCharacter(characterId);
 
       const loadedSettings = await loadAppSettings().catch(() => ({ ...DEFAULT_APP_SETTINGS }));
-      const totalScenes = loadedSettings.maxScenes;
+      const totalScenes =
+        requestedMode === 'guided' && guidedScenes.length > 0
+          ? guidedScenes.length
+          : loadedSettings.maxScenes;
       const storytellerStyle =
         STORYTELLER_PERSONALITIES[loadedSettings.storytellerPersonality].promptStyle;
       setAppSettings(loadedSettings);
@@ -312,7 +374,13 @@ const useStoryEngine = () => {
         : characterId;
 
       const savedStory = await loadActiveStory();
-      if (savedStory && savedStory.characterId === characterId && savedStory.storyProgress.currentScene > 0) {
+      const canResumeClassicStory =
+        requestedMode === 'classic' &&
+        savedStory &&
+        savedStory.characterId === characterId &&
+        savedStory.storyProgress.currentScene > 0;
+
+      if (canResumeClassicStory && savedStory) {
         setCurrentScene(savedStory.currentScene);
         updateSceneAssets(savedStory.currentScene.visuals);
         setStoryProgress(savedStory.storyProgress);
@@ -331,11 +399,29 @@ const useStoryEngine = () => {
 
       const arc = pickCharacterArc(characterId);
       const arcMotifs = arc.motifs.join(', ');
+      const scene1Template = getGuidedTemplate(guidedScenes, 1);
+      const guidedInstruction =
+        requestedMode === 'guided' && scene1Template
+          ? buildGuidedVisualInstruction(scene1Template)
+          : '';
 
       try {
-        const initialScene = await generateStoryScene(
-          `Commence une histoire magique pour enfants. ${storytellerStyle} Le heros principal est ${characterDesc}. Arc narratif: ${arc.title}. Objectif: ${arc.objective}. Tension narrative: ${arc.tension}. Motifs a reutiliser: ${arcMotifs}. Phase narrative: ${getArcPhase(1, totalScenes)}. Nous sommes a la scene 1 sur ${totalScenes}. Garde un ton rassurant et adapte le vocabulaire aux enfants.`,
+        const initialSceneRaw = await generateStoryScene(
+          `Commence une histoire magique pour enfants. ${storytellerStyle} Le heros principal est ${characterDesc}. Arc narratif: ${arc.title}. Objectif: ${arc.objective}. Tension narrative: ${arc.tension}. Motifs a reutiliser: ${arcMotifs}. Phase narrative: ${getArcPhase(1, totalScenes)}. Nous sommes a la scene 1 sur ${totalScenes}. ${guidedInstruction} Garde un ton rassurant et adapte le vocabulaire aux enfants.`,
           characterId
+        );
+
+        const initialScene = applyGuidedVisuals(
+          {
+            text: initialSceneRaw.text,
+            visuals: {
+              bg: initialSceneRaw.visuals.bg,
+              hero: initialSceneRaw.visuals.hero,
+              item: initialSceneRaw.visuals.item,
+              effect: initialSceneRaw.visuals.effect,
+            },
+          },
+          requestedMode === 'guided' ? scene1Template : null,
         );
 
         const formattedScene: StoryScene = {
@@ -364,6 +450,8 @@ const useStoryEngine = () => {
 
         await saveActiveStory({
           characterId,
+          mode: requestedMode,
+          guidedScenes,
           storyProgress: initialProgress,
           currentScene: formattedScene,
           currentChoices: initialChoices,
@@ -380,10 +468,10 @@ const useStoryEngine = () => {
           id: 'scene_1',
           text: `${characterInfo?.name ?? 'Le héros'} commence une belle aventure remplie de mystères et de douceur.`,
           visuals: {
-            bg: characterInfo?.theme ?? 'forest',
-            hero: AssetManager.generateHeroTag(characterId, 'happy'),
-            item: 'star',
-            effect: 'magic',
+            bg: scene1Template?.bg ?? characterInfo?.theme ?? 'forest',
+            hero: scene1Template?.hero ?? AssetManager.generateHeroTag(characterId, 'happy'),
+            item: scene1Template?.item ?? 'star',
+            effect: scene1Template?.effect ?? 'magic',
           },
         };
 
@@ -402,6 +490,8 @@ const useStoryEngine = () => {
 
         await saveActiveStory({
           characterId,
+          mode: requestedMode,
+          guidedScenes,
           storyProgress: initialProgress,
           currentScene: fallbackScene,
           currentChoices: initialChoices,
@@ -453,15 +543,34 @@ const useStoryEngine = () => {
         updatedDecisionTags,
         updatedRecentChoices
       );
+      const guidedTemplate =
+        storyMode === 'guided' ? getGuidedTemplate(activeGuidedScenes, nextSceneNumber) : null;
+      const guidedInstruction =
+        storyMode === 'guided' && guidedTemplate
+          ? buildGuidedVisualInstruction(guidedTemplate)
+          : '';
 
       try {
-        const newScene = await generateStoryScene(
-          `${previousScene.text}\n\n${characterDesc} decide de : ${choiceText}. Arc en cours: ${arc.title}. Objectif de larc: ${arc.objective}. Tension: ${arc.tension}. Motifs a garder visibles: ${arcMotifs}. Theme de valeur: ${arc.valueTheme}. Phase narrative: ${arcPhase}. Choix recents: ${recentChoicesContext}. Decisions clefs prises: ${decisionSummary}. ${storytellerStyle} Nous sommes a la scene ${nextSceneNumber} sur ${totalScenes}. ${
+        const newSceneRaw = await generateStoryScene(
+          `${previousScene.text}\n\n${characterDesc} decide de : ${choiceText}. Arc en cours: ${arc.title}. Objectif de larc: ${arc.objective}. Tension: ${arc.tension}. Motifs a garder visibles: ${arcMotifs}. Theme de valeur: ${arc.valueTheme}. Phase narrative: ${arcPhase}. Choix recents: ${recentChoicesContext}. Decisions clefs prises: ${decisionSummary}. ${storytellerStyle} Nous sommes a la scene ${nextSceneNumber} sur ${totalScenes}. ${guidedInstruction} ${
             isFinalScene
               ? endingInstruction
               : `Continue lhistoire de maniere magique et adaptee aux enfants. Le heros principal reste ${characterInfo?.name ?? selectedCharacter.id}.`
           }`,
           selectedCharacter.id
+        );
+
+        const newScene = applyGuidedVisuals(
+          {
+            text: newSceneRaw.text,
+            visuals: {
+              bg: newSceneRaw.visuals.bg,
+              hero: newSceneRaw.visuals.hero,
+              item: newSceneRaw.visuals.item,
+              effect: newSceneRaw.visuals.effect,
+            },
+          },
+          guidedTemplate,
         );
 
         const formattedScene: StoryScene = {
@@ -506,6 +615,8 @@ const useStoryEngine = () => {
 
         await saveActiveStory({
           characterId: selectedCharacter.id,
+          mode: storyMode,
+          guidedScenes: activeGuidedScenes,
           storyProgress: nextProgress,
           currentScene: formattedScene,
           currentChoices: nextChoices,
@@ -529,10 +640,10 @@ const useStoryEngine = () => {
               )
             : `L'aventure de ${characterInfo?.name ?? 'le héros'} continue avec de nouvelles découvertes pleines de magie.`,
           visuals: {
-            bg: characterInfo?.theme ?? 'forest',
-            hero: AssetManager.generateHeroTag(selectedCharacter.id, isFinalScene ? 'happy' : 'brave'),
-            item: 'star',
-            effect: 'magic',
+            bg: guidedTemplate?.bg ?? characterInfo?.theme ?? 'forest',
+            hero: guidedTemplate?.hero ?? AssetManager.generateHeroTag(selectedCharacter.id, isFinalScene ? 'happy' : 'brave'),
+            item: guidedTemplate?.item ?? 'star',
+            effect: guidedTemplate?.effect ?? 'magic',
           },
         };
 
@@ -567,6 +678,8 @@ const useStoryEngine = () => {
 
         await saveActiveStory({
           characterId: selectedCharacter.id,
+          mode: storyMode,
+          guidedScenes: activeGuidedScenes,
           storyProgress: nextProgress,
           currentScene: fallbackScene,
           currentChoices: nextChoices,
@@ -579,11 +692,13 @@ const useStoryEngine = () => {
       }
     },
     [
+      activeGuidedScenes,
       appSettings.storytellerPersonality,
       generateChoicesForScene,
       generateStoryScene,
       refreshSavedStories,
       selectedCharacter,
+      storyMode,
       storyProgress,
       storyStartedAt,
       updateSceneAssets,
@@ -658,6 +773,33 @@ const useStoryEngine = () => {
     ]
   );
 
+  const advanceGuidedScene = useCallback(async () => {
+    if (!currentScene || !selectedCharacter) {
+      return;
+    }
+
+    if (storyProgress.currentScene >= storyProgress.totalScenes) {
+      return;
+    }
+
+    await nextScene(
+      currentScene,
+      "L'histoire continue",
+      storyProgress.choices,
+      recentChoiceTexts,
+      keyDecisionTags,
+    );
+  }, [
+    currentScene,
+    keyDecisionTags,
+    nextScene,
+    recentChoiceTexts,
+    selectedCharacter,
+    storyProgress.choices,
+    storyProgress.currentScene,
+    storyProgress.totalScenes,
+  ]);
+
   const resetStory = useCallback(() => {
     setCurrentScene(null);
     setStoryProgress({
@@ -670,6 +812,8 @@ const useStoryEngine = () => {
     setSelectedCharacter(null);
     setCurrentAssets(null);
     setStoryStartedAt(null);
+    setStoryMode('classic');
+    setActiveGuidedScenes([]);
     setRecentChoiceTexts([]);
     setKeyDecisionTags([]);
     void clearActiveStory();
@@ -733,6 +877,8 @@ const useStoryEngine = () => {
     updateSceneText,
     updateSceneVisuals,
     makeChoice,
+    advanceGuidedScene,
+    storyMode,
     resetStory,
     updateTotalScenes,
     getProgressPercentage,

@@ -86,7 +86,8 @@ const CharacterSelectionScreen: React.FC = () => {
       {/* Header */}
       <Header
         title="La Fabrique à Rêves"
-        showBackButton={false}
+        showBackButton={true}
+        onBackPress={() => navigation.goBack()}
         rightComponent={settingsButton}
       />
 

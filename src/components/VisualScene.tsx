@@ -15,10 +15,10 @@ import Animated, {
 import AssetImage from './AssetImage';
 
 interface VisualSceneProps {
-  background: number | { color: string; tag: string; isPlaceholder: boolean };
-  hero: number | { color: string; tag: string; isPlaceholder: boolean } | null;
-  item: number | { color: string; tag: string; isPlaceholder: boolean } | null;
-  effect: number | { color: string; tag: string; isPlaceholder: boolean };
+  background: number | null;
+  hero: number | null;
+  item: number | null;
+  effect: number | null;
   onImageLoad?: () => void;
 }
 
@@ -82,21 +82,24 @@ const VisualScene: React.FC<VisualSceneProps> = ({
   return (
     <View style={styles.container}>
       {/* Layer 1: Background (Fond) */}
-      <AssetImage
-        source={background}
-        style={styles.backgroundLayer}
-        resizeMode="cover"
-      />
+      {background !== null && (
+        <AssetImage
+          source={background}
+          style={styles.backgroundLayer}
+          resizeMode="cover"
+        />
+      )}
 
       {/* Layer 2: Effect (Effet d'ambiance - Météo/Particules) */}
-      <Animated.View style={[styles.effectLayer, effectAnimatedStyle]}>
-        <AssetImage
-          source={effect}
-          style={styles.effectImage}
-          resizeMode="cover"
-          fallbackEmoji="✨"
-        />
-      </Animated.View>
+      {effect !== null && (
+        <Animated.View style={[styles.effectLayer, effectAnimatedStyle]}>
+          <AssetImage
+            source={effect}
+            style={styles.effectImage}
+            resizeMode="cover"
+          />
+        </Animated.View>
+      )}
 
       {/* Layer 3: Hero (Héros - Pose spécifique en PNG transparent) */}
       {hero !== null && (
@@ -105,7 +108,6 @@ const VisualScene: React.FC<VisualSceneProps> = ({
             source={hero}
             style={styles.heroImage}
             resizeMode="contain"
-            fallbackEmoji="🧙"
           />
         </Animated.View>
       )}
@@ -117,7 +119,6 @@ const VisualScene: React.FC<VisualSceneProps> = ({
             source={item}
             style={styles.itemImage}
             resizeMode="contain"
-            fallbackEmoji="🌟"
           />
         </Animated.View>
       )}

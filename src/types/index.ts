@@ -9,18 +9,29 @@ export interface StoryScene {
   };
 }
 
+export type StoryMode = 'classic' | 'guided';
+
+export interface GuidedSceneTemplate {
+  id: string;
+  bg: string;
+  hero: string;
+  item: string;
+  effect: string;
+  note?: string;
+}
+
 export interface Character {
   id: string;
   name: string;
   description: string;
-  image: number | { color: string; tag: string; isPlaceholder: boolean };
+  image: number | null;
   theme: string;
 }
 
 export interface StoryChoice {
   id: string;
   text: string;
-  icon: string | number | { color: string; tag: string; isPlaceholder: boolean };
+  icon: string | number | null;
   color: string;
   nextScene: string;
 }
@@ -34,6 +45,8 @@ export interface StoryProgress {
 
 export interface SavedStoryState {
   characterId: string;
+  mode?: StoryMode;
+  guidedScenes?: GuidedSceneTemplate[];
   storyProgress: StoryProgress;
   currentScene: StoryScene;
   currentChoices: StoryChoice[];

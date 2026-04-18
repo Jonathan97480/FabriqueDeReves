@@ -6,14 +6,26 @@
 import React from 'react';
 import { createStackNavigator } from '@react-navigation/stack';
 import { NavigationContainer } from '@react-navigation/native';
+import GuidedHeroSelectionScreen from '../screens/GuidedHeroSelectionScreen';
+import GuidedSceneBuilderScreen from '../screens/GuidedSceneBuilderScreen';
+import ModeSelectionScreen from '../screens/ModeSelectionScreen';
 import CharacterSelectionScreen from '../screens/CharacterSelectionScreen';
 import StoryScreen from '../screens/StoryScreen';
 import SettingsScreen from '../screens/SettingsScreen';
+import { GuidedSceneTemplate, StoryMode } from '../types';
 import { colors } from '../theme/colors';
 
 export type RootStackParamList = {
-  CharacterSelection: undefined;
-  Story: { characterId: string };
+  ModeSelection: undefined;
+  CharacterSelection: { mode?: StoryMode } | undefined;
+  GuidedHeroSelection: undefined;
+  GuidedSceneBuilder: {
+    characterId: string;
+    totalScenes: number;
+    sceneIndex: number;
+    guidedScenes: GuidedSceneTemplate[];
+  };
+  Story: { characterId: string; mode?: StoryMode; guidedScenes?: GuidedSceneTemplate[] };
   Settings: undefined;
 };
 
@@ -23,7 +35,7 @@ const AppNavigator: React.FC = () => {
   return (
     <NavigationContainer>
       <Stack.Navigator
-        initialRouteName="CharacterSelection"
+        initialRouteName="ModeSelection"
         screenOptions={{
           headerShown: false,
           cardStyle: {
@@ -46,10 +58,31 @@ const AppNavigator: React.FC = () => {
         }}
       >
         <Stack.Screen
+          name="ModeSelection"
+          component={ModeSelectionScreen}
+          options={{
+            title: 'La Fabrique à Rêves',
+          }}
+        />
+        <Stack.Screen
           name="CharacterSelection"
           component={CharacterSelectionScreen}
           options={{
             title: 'La Fabrique à Rêves',
+          }}
+        />
+        <Stack.Screen
+          name="GuidedHeroSelection"
+          component={GuidedHeroSelectionScreen}
+          options={{
+            title: 'Choisir un héros',
+          }}
+        />
+        <Stack.Screen
+          name="GuidedSceneBuilder"
+          component={GuidedSceneBuilderScreen}
+          options={{
+            title: 'Composer les scènes',
           }}
         />
         <Stack.Screen

@@ -17,7 +17,7 @@ interface CharacterCardProps {
   id: string;
   name: string;
   description: string;
-  image: number;
+  image: number | null;
   isSelected?: boolean;
   onPress: (id: string) => void;
   style?: any;
@@ -84,7 +84,6 @@ const CharacterCard: React.FC<CharacterCardProps> = ({
           source={image}
           style={styles.image}
           resizeMode="contain"
-          fallbackEmoji="🧙"
         />
         {isSelected && (
           <View style={styles.selectedBadge}>

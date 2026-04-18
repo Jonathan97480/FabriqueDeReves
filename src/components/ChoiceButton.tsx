@@ -6,13 +6,14 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import { colors, gradients } from '../theme/colors';
 import AssetImage from './AssetImage';
 
 interface ChoiceButtonProps {
   id: string;
   text: string;
-  icon: string | number | { color: string; tag: string; isPlaceholder: boolean };
+  icon: string | number | null;
   color: 'pink' | 'orange' | 'green' | 'purple';
   onPress: (id: string) => void;
   disabled?: boolean;
@@ -43,19 +44,19 @@ const ChoiceButton: React.FC<ChoiceButtonProps> = ({
     }
   };
 
-  const getIconEmoji = () => {
-    const iconMap: { [key: string]: string } = {
-      'compass': '🧭',
-      'cave': '🕳️',
-      'fairy': '🧚',
-      'star': '⭐',
-      'map': '🗺️',
-      'key': '🔑',
+  const getIconName = () => {
+    const iconMap: Record<string, React.ComponentProps<typeof Ionicons>['name']> = {
+      compass: 'compass-outline',
+      cave: 'ellipse-outline',
+      fairy: 'sparkles-outline',
+      star: 'star-outline',
+      map: 'map-outline',
+      key: 'key-outline',
     };
-    return iconMap[icon as string] || '✨';
+    return iconMap[icon as string] || 'sparkles-outline';
   };
 
-  const isAsset = typeof icon === 'object' && !Array.isArray(icon);
+  const isAsset = typeof icon === 'number';
 
   return (
     <TouchableOpacity
@@ -74,12 +75,12 @@ const ChoiceButton: React.FC<ChoiceButtonProps> = ({
       <View style={styles.content}>
         {isAsset ? (
           <AssetImage
-            source={icon as any}
+            source={icon}
             style={styles.iconImage}
             resizeMode="contain"
           />
         ) : typeof icon === 'string' ? (
-          <Text style={styles.iconEmoji}>{getIconEmoji()}</Text>
+          <Ionicons name={getIconName()} size={28} color={colors.text.white} style={styles.iconVector} />
         ) : null}
 
         <View style={styles.textContainer}>
@@ -117,8 +118,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 10,
   },
-  iconEmoji: {
-    fontSize: 32,
+  iconVector: {
     marginRight: 15,
   },
   iconImage: {
